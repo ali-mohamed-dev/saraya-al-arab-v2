@@ -1,0 +1,121 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  role      String   @default("ADMIN") // ADMIN, WAITER, CASHIER, KITCHEN
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Meal {
+  id            String   @id @default(cuid())
+  title         String
+  titleAr       String   @default("")
+  description   String   @default("")
+  descriptionAr String   @default("")
+  price         Float
+  prepTime      String   @default("15 دقيقة")
+  category      String   @default("مشويات")
+  categoryAr    String   @default("")
+  imageUrl      String   @default("")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Promotion {
+  id             String   @id @default(cuid())
+  bannerImageUrl String
+  title          String   @default("")
+  titleAr        String   @default("")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model MealAddOn {
+  id            String   @id @default(cuid())
+  mealId        String
+  title         String
+  titleAr       String   @default("")
+  price         Float
+  imageUrl      String   @default("")
+  isRecommended Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     Int         @unique
+  type            String      // DINE_IN, TAKEAWAY, DELIVERY
+  status          String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, DELIVERED, CANCELLED
+  customerName    String      @default("")
+  customerPhone   String      @default("")
+  deliveryAddress String      @default("")
+  tableNumber     String      @default("")
+  pickupTime      String      @default("")
+  notes           String      @default("")
+  subtotal        Float
+  serviceCharge   Float       @default(0)
+  total           Float
+  shiftId         String      @default("")
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  items           OrderItem[]
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  mealId      String
+  mealTitle   String
+  mealTitleAr String
+  price       Float
+  quantity    Int
+  addOns      String   @default("[]") // JSON array of {id, title, titleAr, price}
+  imageUrl    String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  title       String
+  amount      Float
+  category    String   @default("عام")
+  shiftId     String   @default("")
+  addedBy     String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Shift {
+  id            String    @id @default(cuid())
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  startedBy     String
+  endedBy       String    @default("")
+  totalRevenue  Float     @default(0)
+  totalExpenses Float     @default(0)
+  netRevenue    Float     @default(0)
+  status        String    @default("OPEN") // OPEN, CLOSED
+  notes         String    @default("")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
