@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   UtensilsCrossed, Plus, LogOut, Clock, ChefHat, Check,
@@ -106,6 +106,26 @@ function getRelativeTime(dateStr: string): string {
   return `منذ ${Math.floor(diff / 86400)} يوم`
 }
 
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext()
+    if (ctx.state === 'suspended') {
+      void ctx.resume()
+    }
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 880
+    gain.gain.setValueAtTime(0.2, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.35)
+  } catch {
+    // browser may block autoplay without interaction
+  }
+}
+
 function transformOrder(raw: Record<string, unknown>): Order {
   const items = (raw.items as Array<Record<string, unknown>> | undefined) ?? []
   return {
@@ -181,6 +201,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [cart, setCart] = useState<CartItem[]>([])
   const [notes, setNotes] = useState('')
+  const [existingTableOrder, setExistingTableOrder] = useState<Order | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   // ── Order detail dialog ───────────────────────────────────────────────────
@@ -188,28 +209,82 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Relative time refresh ─────────────────────────────────────────────────
   const [timeKey, setTimeKey] = useState(0)
+  const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
+  const [shiftLoading, setShiftLoading] = useState(true)
+  const prevOrderStatusRef = useRef<Record<string, Order['status']>>({})
+
+  const fetchShiftStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/shifts?current=true')
+      if (res.ok) {
+        const shift = await res.json()
+        setShiftOpen(!!shift)
+      } else {
+        setShiftOpen(false)
+      }
+    } catch {
+      setShiftOpen(false)
+    } finally {
+      setShiftLoading(false)
+    }
+  }, [])
 
   // ── Fetch active orders ───────────────────────────────────────────────────
   const fetchActiveOrders = useCallback(async () => {
+    if (shiftOpen !== true) {
+      setOrders([])
+      setLoadingOrders(false)
+      return
+    }
+
     try {
-      const [pendingRes, confirmedRes, preparingRes] = await Promise.all([
+      const [pendingRes, confirmedRes, preparingRes, readyRes] = await Promise.all([
         fetch('/api/orders?status=PENDING'),
         fetch('/api/orders?status=CONFIRMED'),
         fetch('/api/orders?status=PREPARING'),
+        fetch('/api/orders?status=READY'),
       ])
       const pending = pendingRes.ok ? (await pendingRes.json()).map(transformOrder) : []
       const confirmed = confirmedRes.ok ? (await confirmedRes.json()).map(transformOrder) : []
       const preparing = preparingRes.ok ? (await preparingRes.json()).map(transformOrder) : []
-      const allOrders = [...pending, ...confirmed, ...preparing]
+      const ready = readyRes.ok ? (await readyRes.json()).map(transformOrder) : []
+      const allOrders = [...pending, ...confirmed, ...preparing, ...ready]
+      const previousStatus = prevOrderStatusRef.current
+      const newDineInPending = allOrders.filter((o) =>
+        o.status === 'PENDING' && o.type === 'DINE_IN' && !previousStatus[o.id]
+      )
+      const readyDineInOrders = allOrders.filter((o) =>
+        o.status === 'READY' && o.type === 'DINE_IN' && previousStatus[o.id] && previousStatus[o.id] !== 'READY'
+      )
+
       // Sort by creation date (newest first)
       allOrders.sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+      if (Object.keys(previousStatus).length > 0) {
+        if (newDineInPending.length > 0) {
+          playNotificationSound()
+          toast({
+            title: 'طلب صالة جديد',
+            description: `طلب رقم #${newDineInPending[0].orderNumber} وصل للويتر`,
+          })
+        }
+        if (readyDineInOrders.length > 0) {
+          playNotificationSound()
+          toast({
+            title: 'طلب صالة جاهز',
+            description: `طلب رقم #${readyDineInOrders[0].orderNumber} جاهز للاستلام`,
+          })
+        }
+      }
+
+      prevOrderStatusRef.current = Object.fromEntries(allOrders.map((o) => [o.id, o.status]))
       setOrders(allOrders)
     } catch {
       /* ignore polling errors */
     } finally {
       setLoadingOrders(false)
     }
-  }, [])
+  }, [shiftOpen])
 
   // ── Fetch meals for new order ─────────────────────────────────────────────
   const fetchMeals = useCallback(async () => {
@@ -225,17 +300,28 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Initial fetch ─────────────────────────────────────────────────────────
   useEffect(() => {
-    fetchActiveOrders()
-  }, [fetchActiveOrders])
+    fetchShiftStatus()
+    const interval = setInterval(fetchShiftStatus, 10000)
+    return () => clearInterval(interval)
+  }, [fetchShiftStatus])
+
+  useEffect(() => {
+    if (shiftOpen) {
+      fetchActiveOrders()
+    } else if (shiftOpen === false) {
+      setLoadingOrders(false)
+    }
+  }, [shiftOpen, fetchActiveOrders])
 
   // ── Polling every 5 seconds ──────────────────────────────────────────────
   useEffect(() => {
+    if (shiftOpen !== true) return
     const interval = setInterval(() => {
       fetchActiveOrders()
       setTimeKey((k) => k + 1)
     }, 5000)
     return () => clearInterval(interval)
-  }, [fetchActiveOrders])
+  }, [fetchActiveOrders, shiftOpen])
 
   // ── Fetch meals when dialog opens ─────────────────────────────────────────
   useEffect(() => {
@@ -250,8 +336,23 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       setNotes('')
       setSearchQuery('')
       setFilterCategory('الكل')
+      setExistingTableOrder(null)
     }
   }, [showNewOrder, fetchMeals])
+
+  useEffect(() => {
+    if (orderType !== 'DINE_IN' || !tableNumber.trim()) {
+      setExistingTableOrder(null)
+      return
+    }
+
+    const existing = orders.find((order) =>
+      order.type === 'DINE_IN' &&
+      order.tableNumber === tableNumber.trim() &&
+      !['DELIVERED', 'CANCELLED'].includes(order.status)
+    )
+    setExistingTableOrder(existing || null)
+  }, [orderType, tableNumber, orders])
 
   // ── Update order status ──────────────────────────────────────────────────
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -357,16 +458,31 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
         notes: notes.trim() || undefined,
       }
 
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload),
-      })
+      let res
+      if (existingTableOrder) {
+        res = await fetch(`/api/orders/${existingTableOrder.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemsToAdd: orderPayload.items,
+            notes: orderPayload.notes,
+          }),
+        })
+      } else {
+        res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload),
+        })
+      }
 
       if (res.ok) {
-        toast({ title: 'تم إرسال الطلب بنجاح', description: `طلب رقم ${cart.length} أصناف` })
+        toast({ title: existingTableOrder ? 'تمت الإضافة إلى الطلب المفتوح' : 'تم إرسال الطلب بنجاح' })
         setShowNewOrder(false)
         setCart([])
+        setTableNumber('')
+        setDeliveryAddress('')
+        setNotes('')
         fetchActiveOrders()
       } else {
         const data = await res.json().catch(() => ({}))
@@ -413,6 +529,49 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   const pendingCount = orders.filter((o) => o.status === 'PENDING').length
   const confirmedCount = orders.filter((o) => o.status === 'CONFIRMED').length
   const preparingCount = orders.filter((o) => o.status === 'PREPARING').length
+  const readyCount = orders.filter((o) => o.status === 'READY').length
+
+  if (shiftLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+        <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
+          <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (shiftOpen === false) {
+    return (
+      <div className="min-h-screen bg-background" dir="rtl">
+        <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10">
+                <UtensilsCrossed className="h-5 w-5 text-[#D4AF37]" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الويتر</h1>
+                <p className="text-xs text-muted-foreground">سرايا العرب</p>
+              </div>
+            </div>
+            <div>
+              <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground hover:text-red-400">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">خروج</span>
+              </Button>
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-7xl p-4 md:p-6">
+          <div className="rounded-3xl border border-red-500/20 bg-red-500/5 p-8 text-center">
+            <h2 className="mb-2 text-2xl font-bold text-red-600">الشيفت مغلق</h2>
+            <p className="text-muted-foreground">الويتر مغلق حتى يقوم المسؤول ببدء شيفت جديد.</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -448,6 +607,12 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                 <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1">
                   <ChefHat className="h-3 w-3" />
                   {preparingCount} يُحضّر
+                </Badge>
+              )}
+              {readyCount > 0 && (
+                <Badge className="bg-green-500/10 text-green-400 border-green-500/30 gap-1">
+                  <Check className="h-3 w-3" />
+                  {readyCount} جاهز للاستلام
                 </Badge>
               )}
             </div>
@@ -657,6 +822,12 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                         className="bg-muted border-border/50 h-9 mt-1"
                         dir="rtl"
                       />
+                      {existingTableOrder && (
+                        <p className="mt-2 rounded-lg border border-yellow-300/70 bg-yellow-200/10 px-3 py-2 text-xs text-yellow-800">
+                          يوجد طلب مفتوح للطاولة {tableNumber.trim()} (# {existingTableOrder.orderNumber}) بحالة {ORDER_STATUS_MAP[existingTableOrder.status]?.label}.
+                          سيتم إضافة الأصناف إلى الطلب المفتوح.
+                        </p>
+                      )}
                     </div>
                   )}
                   <div className={orderType === 'DINE_IN' ? '' : 'col-span-1'}>
@@ -1037,7 +1208,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                 </div>
 
                 {/* Action buttons */}
-                {selectedOrder.status === 'PENDING' && (
+                {selectedOrder.status === 'PENDING' && selectedOrder.type === 'DINE_IN' && (
                   <Button
                     onClick={() => {
                       updateOrderStatus(selectedOrder.id, 'CONFIRMED')
@@ -1177,7 +1348,7 @@ function OrderCard({
                 <Eye className="h-3 w-3" />
                 التفاصيل
               </Button>
-              {order.status === 'PENDING' && (
+              {order.status === 'PENDING' && order.type === 'DINE_IN' && (
                 <Button
                   size="sm"
                   onClick={onConfirm}

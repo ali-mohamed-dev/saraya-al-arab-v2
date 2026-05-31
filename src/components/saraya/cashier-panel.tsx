@@ -89,6 +89,26 @@ function getRelativeTime(dateStr: string): string {
   return `منذ ${Math.floor(diff / 86400)} يوم`
 }
 
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext()
+    if (ctx.state === 'suspended') {
+      void ctx.resume()
+    }
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 880
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.5)
+  } catch {
+    // audio not supported or blocked by browser
+  }
+}
+
 function transformOrder(raw: Record<string, unknown>): Order {
   const items = (raw.items as Array<Record<string, unknown>> | undefined) ?? []
   return {
@@ -153,10 +173,14 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const [loadingOrders, setLoadingOrders] = useState(true)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
+  const [receiptTableOrders, setReceiptTableOrders] = useState<Order[] | null>(null)
+  const [payingTable, setPayingTable] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('active')
   const [relativeTimers, setRelativeTimers] = useState<Record<string, string>>({})
   const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null)
   const [currentShiftId, setCurrentShiftId] = useState<string>('')
+  const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
+  const [shiftLoading, setShiftLoading] = useState(true)
 
   // Expense form state
   const [expenseTitle, setExpenseTitle] = useState('')
@@ -164,38 +188,46 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const [expenseCategory, setExpenseCategory] = useState('عام')
   const [savingExpense, setSavingExpense] = useState(false)
 
-  const prevOrderIdsRef = useRef<Set<string>>(new Set())
+  const prevOrderStatusRef = useRef<Record<string, Order['status']>>({})
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Load or create shift
   useEffect(() => {
-    const fetchOrCreateShift = async () => {
+    const fetchShiftStatus = async () => {
       try {
         const res = await fetch('/api/shifts?current=true')
         if (res.ok) {
           const shift = await res.json()
           if (shift) {
             setCurrentShiftId(shift.id)
+            setShiftOpen(true)
           } else {
-            // Create new shift
-            const createRes = await fetch('/api/shifts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ startedBy: username }),
-            })
-            if (createRes.ok) {
-              const newShift = await createRes.json()
-              setCurrentShiftId(newShift.id)
-            }
+            setCurrentShiftId('')
+            setShiftOpen(false)
           }
+        } else {
+          setCurrentShiftId('')
+          setShiftOpen(false)
         }
-      } catch { /* ignore */ }
+      } catch {
+        setCurrentShiftId('')
+        setShiftOpen(false)
+      } finally {
+        setShiftLoading(false)
+      }
     }
-    fetchOrCreateShift()
-  }, [username])
+
+    fetchShiftStatus()
+    const interval = setInterval(fetchShiftStatus, 10000)
+    return () => clearInterval(interval)
+  }, [])
 
   const fetchOrders = useCallback(async (showLoading = false) => {
+    if (shiftOpen !== true) {
+      setAllOrders([])
+      setLoadingOrders(false)
+      return
+    }
     try {
       if (showLoading) setLoadingOrders(true)
       const statuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERED']
@@ -203,54 +235,73 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         statuses.map(s => fetch(`/api/orders?status=${s}`).then(r => r.ok ? r.json() : []))
       )
       const orders: Order[] = results.flat().map(transformOrder)
+      const previousStatus = prevOrderStatusRef.current
 
-      // Detect new PENDING orders
-      const newPending = orders.filter(o =>
-        o.status === 'PENDING' && !prevOrderIdsRef.current.has(o.id)
+      const newPending = orders.filter((o) =>
+        o.status === 'PENDING' && o.type !== 'DINE_IN' && !previousStatus[o.id]
       )
-      if (newPending.length > 0 && prevOrderIdsRef.current.size > 0) {
+      const newReady = orders.filter((o) =>
+        o.status === 'READY' && o.type !== 'DINE_IN' && previousStatus[o.id] && previousStatus[o.id] !== 'READY'
+      )
+
+      if (Object.keys(previousStatus).length > 0 && newPending.length > 0) {
         const newest = newPending[0]
         setNewOrderAlert(newest)
-        toast({ title: '🔔 طلب جديد!', description: `طلب رقم #${newest.orderNumber} - ${ORDER_TYPE_MAP[newest.type]?.label}` })
-        // Play browser notification sound
-        try {
-          const ctx = new AudioContext()
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
-          osc.connect(gain)
-          gain.connect(ctx.destination)
-          osc.frequency.value = 880
-          gain.gain.setValueAtTime(0.3, ctx.currentTime)
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
-          osc.start(ctx.currentTime)
-          osc.stop(ctx.currentTime + 0.5)
-        } catch { /* audio not supported */ }
+        toast({
+          title: '🔔 طلب جديد للكاشير',
+          description: `طلب رقم #${newest.orderNumber} - ${ORDER_TYPE_MAP[newest.type]?.label}`,
+        })
+        playNotificationSound()
         setTimeout(() => setNewOrderAlert(null), 5000)
       }
 
-      const newIds = new Set(orders.map(o => o.id))
-      prevOrderIdsRef.current = newIds
+      if (Object.keys(previousStatus).length > 0 && newReady.length > 0) {
+        const readyOrder = newReady[0]
+        toast({
+          title: 'طلب جاهز للكاشير',
+          description: `طلب رقم #${readyOrder.orderNumber} جاهز للاستلام`,
+        })
+        playNotificationSound()
+      }
+
+      prevOrderStatusRef.current = Object.fromEntries(orders.map((o) => [o.id, o.status]))
       setAllOrders(orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
     } catch { /* ignore */ } finally {
       setLoadingOrders(false)
     }
-  }, [toast])
+  }, [toast, shiftOpen])
 
   const fetchExpenses = useCallback(async () => {
+    if (shiftOpen !== true || !currentShiftId) {
+      setExpenses([])
+      return
+    }
+
     try {
-      const url = currentShiftId ? `/api/expenses?shiftId=${currentShiftId}` : '/api/expenses'
+      const url = `/api/expenses?shiftId=${currentShiftId}`
       const res = await fetch(url)
       if (res.ok) setExpenses(await res.json())
     } catch { /* ignore */ }
-  }, [currentShiftId])
-
-  useEffect(() => { fetchOrders(true) }, [fetchOrders])
-  useEffect(() => { if (currentShiftId) fetchExpenses() }, [fetchExpenses, currentShiftId])
+  }, [currentShiftId, shiftOpen])
 
   useEffect(() => {
+    if (shiftOpen === true) {
+      fetchOrders(true)
+    } else if (shiftOpen === false) {
+      setLoadingOrders(false)
+    }
+  }, [fetchOrders, shiftOpen])
+
+  useEffect(() => {
+    if (shiftOpen !== true) return
+    if (currentShiftId) fetchExpenses()
+  }, [fetchExpenses, currentShiftId, shiftOpen])
+
+  useEffect(() => {
+    if (shiftOpen !== true) return
     pollIntervalRef.current = setInterval(() => fetchOrders(), 5000)
     return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current) }
-  }, [fetchOrders])
+  }, [fetchOrders, shiftOpen])
 
   useEffect(() => {
     const update = () => {
@@ -282,6 +333,53 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
     } finally {
       setUpdatingOrderId(null)
+    }
+  }
+
+  const confirmOrder = async (orderId: string) => {
+    setUpdatingOrderId(orderId)
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CONFIRMED' }),
+      })
+      if (res.ok) {
+        toast({ title: 'تم تأكيد الطلب', description: 'تم إرسال الطلب إلى المطبخ' })
+        fetchOrders()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: data.error || 'فشل في تحديث الحالة', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setUpdatingOrderId(null)
+    }
+  }
+
+  const markTableAsPaid = async (orders: Order[]) => {
+    const orderIds = orders.map((order) => order.id)
+    setPayingTable(orders[0]?.tableNumber || orderIds[0])
+    try {
+      const results = await Promise.all(orderIds.map((orderId) =>
+        fetch(`/api/orders/${orderId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'DELIVERED' }),
+        })
+      ))
+      if (results.every((res) => res.ok)) {
+        toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة جميع الطلبات في الطاولة' })
+        fetchOrders()
+        setReceiptTableOrders(null)
+      } else {
+        toast({ title: 'خطأ', description: 'فشل في تحديث حالة بعض الطلبات', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setPayingTable(null)
     }
   }
 
@@ -328,6 +426,60 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const todayRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
   const netRevenue = todayRevenue - totalExpenses
+
+  const dineInTableGroups = activeOrders.reduce<Record<string, Order[]>>((acc, order) => {
+    if (order.type === 'DINE_IN' && order.tableNumber) {
+      acc[order.tableNumber] = acc[order.tableNumber] || []
+      acc[order.tableNumber].push(order)
+    }
+    return acc
+  }, {})
+  const groupedTableNumbers = new Set(Object.entries(dineInTableGroups)
+    .filter(([, orders]) => orders.length > 1)
+    .map(([table]) => table))
+  const groupedTableOrders = Object.entries(dineInTableGroups).filter(([, orders]) => orders.length > 1) as [string, Order[]][]
+  const remainingOrders = activeOrders.filter(order => !(order.type === 'DINE_IN' && order.tableNumber && groupedTableNumbers.has(order.tableNumber)))
+
+  if (shiftLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+        <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
+          <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (shiftOpen === false) {
+    return (
+      <div className="min-h-screen bg-background" dir="rtl">
+        <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10">
+                <DollarSign className="h-5 w-5 text-[#D4AF37]" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الكاشير</h1>
+                <p className="text-xs text-muted-foreground">سرايا العرب — {username}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground hover:text-red-400">
+                <LogOut className="h-4 w-4" />خروج
+              </Button>
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-7xl p-4 md:p-6">
+          <div className="rounded-3xl border border-red-500/20 bg-red-500/5 p-8 text-center">
+            <h2 className="mb-2 text-2xl font-bold text-red-600">الكاشير مغلق</h2>
+            <p className="text-muted-foreground">الكاشير مغلق حتى يقوم المسؤول ببدء شيفت جديد.</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   const renderReceipt = (order: Order) => (
     <div className="bg-background text-foreground rounded-xl overflow-hidden" dir="rtl">
@@ -385,6 +537,162 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       {order.notes && <div className="px-6 py-3"><p className="text-xs text-muted-foreground">ملاحظات: {order.notes}</p></div>}
     </div>
   )
+
+  const renderTableReceipt = (tableOrders: Order[]) => {
+    const tableNumber = tableOrders[0].tableNumber || ''
+    const orderNumbers = tableOrders.map((o) => `#${o.orderNumber}`).join(' + ')
+    const subtotal = tableOrders.reduce((sum, order) => sum + order.subtotal, 0)
+    const serviceCharge = tableOrders.reduce((sum, order) => sum + order.serviceCharge, 0)
+    const total = tableOrders.reduce((sum, order) => sum + order.total, 0)
+
+    const aggregatedItems = tableOrders.flatMap((order) =>
+      order.items.map((item) => ({
+        ...item,
+        key: `${item.mealId}-${item.price}-${JSON.stringify(item.addOns || [])}`,
+        orderNumber: order.orderNumber,
+      }))
+    ).reduce<Record<string, { mealTitle: string; mealTitleAr: string; quantity: number; price: number; addOns: string; orderNumbers: Set<number> }>>((acc, item) => {
+      const key = item.key
+      if (!acc[key]) {
+        acc[key] = {
+          mealTitle: item.mealTitle,
+          mealTitleAr: item.mealTitleAr,
+          quantity: item.quantity,
+          price: item.price,
+          addOns: item.addOns ? JSON.stringify(item.addOns) : '[]',
+          orderNumbers: new Set([item.orderNumber]),
+        }
+      } else {
+        acc[key].quantity += item.quantity
+        acc[key].orderNumbers.add(item.orderNumber)
+      }
+      return acc
+    }, {})
+
+    return (
+      <div className="bg-background text-foreground rounded-xl overflow-hidden" dir="rtl">
+        <div className="bg-[#D4AF37]/10 border-b border-[#D4AF37]/30 px-6 py-5 text-center">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <UtensilsCrossed className="h-6 w-6 text-[#D4AF37]" />
+            <h2 className="text-2xl font-bold text-[#D4AF37]">فاتورة طاولة {tableNumber}</h2>
+          </div>
+          <p className="text-xs text-muted-foreground">طلبات {orderNumbers}</p>
+        </div>
+        <div className="px-6 py-4 space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">رقم الطاولة</span><span>{tableNumber}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">عدد الطلبات</span><span>{tableOrders.length}</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">النوع</span><span className={ORDER_TYPE_MAP['DINE_IN']?.color || ''}>{ORDER_TYPE_MAP['DINE_IN']?.label}</span></div>
+        </div>
+        <Separator className="bg-border/30" />
+        <div className="px-6 py-4">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/30 text-muted-foreground">
+                <th className="pb-2 text-right font-medium">الصنف</th>
+                <th className="pb-2 text-center font-medium w-16">الكمية</th>
+                <th className="pb-2 text-left font-medium w-24">السعر</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.values(aggregatedItems).map((item, index) => (
+                <tr key={`${item.mealTitle}-${index}`} className="border-b border-border/10">
+                  <td className="py-2.5">
+                    <p className="font-medium">{item.mealTitleAr || item.mealTitle}</p>
+                    {item.addOns !== '[]' && <p className="text-xs text-muted-foreground">+ إضافات</p>}
+                    <p className="text-[10px] text-muted-foreground">طلبات {Array.from(item.orderNumbers).map((num) => `#${num}`).join(' + ')}</p>
+                  </td>
+                  <td className="py-2.5 text-center">{item.quantity}</td>
+                  <td className="py-2.5 text-left">{(item.price * item.quantity).toFixed(2)} ج.م</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Separator className="bg-border/30" />
+        <div className="px-6 py-4 space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">المجموع الفرعي</span><span>{subtotal.toFixed(2)} ج.م</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">رسوم الخدمة</span><span>{serviceCharge.toFixed(2)} ج.م</span></div>
+          <Separator className="bg-border/30 my-1" />
+          <div className="flex justify-between text-lg font-bold">
+            <span className="text-[#D4AF37]">الإجمالي</span>
+            <span className="text-[#D4AF37]">{total.toFixed(2)} ج.م</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const getGroupedTableStatus = (orders: Order[]) => {
+    if (orders.some((o) => o.status === 'READY')) return 'READY'
+    if (orders.some((o) => o.status === 'PREPARING')) return 'PREPARING'
+    if (orders.some((o) => o.status === 'CONFIRMED')) return 'CONFIRMED'
+    return 'PENDING'
+  }
+
+  const renderTableCard = (tableNumber: string, orders: Order[]) => {
+    const groupStatus = getGroupedTableStatus(orders)
+    const statusInfo = ORDER_STATUS_MAP[groupStatus]
+    const total = orders.reduce((sum, order) => sum + order.total, 0)
+    const isReady = groupStatus === 'READY'
+
+    return (
+      <motion.div key={`table-${tableNumber}`} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }} layout>
+        <Card
+          className={`border overflow-hidden cursor-pointer transition-all duration-200 ${isReady ? 'border-green-500/50 hover:border-green-400/70 bg-green-500/5' : 'border-border/50 hover:border-[#D4AF37]/40 bg-card'}`}
+          onClick={() => setReceiptTableOrders(orders)}
+          dir="rtl"
+        >
+          <div className={`h-1 ${isReady ? 'bg-gradient-to-l from-green-500 to-green-400/40' : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'}`} />
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
+                  <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>طاولة {tableNumber}</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo?.bg || ''}`}>
+                      <span className={statusInfo?.color || ''}>{statusInfo?.label || groupStatus}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#D4AF37]">
+                      طلبات {orders.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Clock className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground">أحدث طلب {getRelativeTime(orders[0].createdAt)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {orders.slice(0, 2).map((order) => (
+                <div key={order.id} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">#{order.orderNumber}</span>
+                    <span className="truncate">{ORDER_STATUS_MAP[order.status]?.label || order.status}</span>
+                  </div>
+                  <span className="text-muted-foreground flex-shrink-0">{order.total.toFixed(2)} ج.م</span>
+                </div>
+              ))}
+              {orders.length > 2 && <p className="text-[10px] text-muted-foreground text-center">+{orders.length - 2} طلبات إضافية</p>}
+            </div>
+            <Separator className="bg-border/20" />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-muted-foreground">الإجمالي كله</p>
+                <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>{total.toFixed(2)} ج.م</p>
+              </div>
+              <Button size="sm" variant={isReady ? 'default' : 'outline'} className="gap-2 h-9 px-4"
+                onClick={(e) => { e.stopPropagation(); setReceiptTableOrders(orders) }}>
+                <Receipt className="h-4 w-4" />عرض الفاتورة
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    )
+  }
 
   const renderOrderCard = (order: Order) => {
     const statusInfo = ORDER_STATUS_MAP[order.status]
@@ -448,18 +756,24 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
                 <p className="text-[10px] text-muted-foreground">الإجمالي</p>
                 <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>{order.total.toFixed(2)} ج.م</p>
               </div>
-              {isReady ? (
-                <Button size="sm" onClick={(e) => { e.stopPropagation(); markAsPaid(order.id) }} disabled={updatingOrderId === order.id}
-                  className="gap-2 bg-green-600 text-white hover:bg-green-500 font-bold h-9 px-4">
-                  {updatingOrderId === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
-                  تم الدفع
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReceiptOrder(order) }}
-                  className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
-                  <Receipt className="h-4 w-4" />الفاتورة
-                </Button>
-              )}
+              {order.status === 'PENDING' && order.type !== 'DINE_IN' ? (
+              <Button size="sm" onClick={(e) => { e.stopPropagation(); confirmOrder(order.id) }} disabled={updatingOrderId === order.id}
+                className="gap-2 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold h-9 px-4">
+                {updatingOrderId === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                تأكيد
+              </Button>
+            ) : isReady ? (
+              <Button size="sm" onClick={(e) => { e.stopPropagation(); markAsPaid(order.id) }} disabled={updatingOrderId === order.id}
+                className="gap-2 bg-green-600 text-white hover:bg-green-500 font-bold h-9 px-4">
+                {updatingOrderId === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                تم الدفع
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setReceiptOrder(order) }}
+                className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
+                <Receipt className="h-4 w-4" />الفاتورة
+              </Button>
+            )}
             </div>
           </CardContent>
         </Card>
@@ -520,7 +834,6 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
           {[
             { icon: <ShoppingBag className="h-6 w-6 text-blue-400" />, bg: 'bg-blue-500/10', value: activeOrders.length, label: 'طلبات نشطة', color: 'text-blue-400' },
             { icon: <CheckCircle className="h-6 w-6 text-green-400" />, bg: 'bg-green-500/10', value: readyOrders.length, label: 'جاهز للدفع', color: 'text-green-400' },
-            { icon: <DollarSign className="h-6 w-6 text-[#D4AF37]" />, bg: 'bg-[#D4AF37]/10', value: `${todayRevenue.toFixed(0)} ج.م`, label: 'إيراد الشيفت', color: 'text-[#D4AF37]' },
             { icon: <TrendingDown className="h-6 w-6 text-red-400" />, bg: 'bg-red-500/10', value: `${totalExpenses.toFixed(0)} ج.م`, label: 'مصروفات', color: 'text-red-400' },
           ].map((s, i) => (
             <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
@@ -538,16 +851,6 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         </div>
 
         {/* Net Revenue Card */}
-        <Card className={`border ${netRevenue >= 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
-          <CardContent className="p-4 flex items-center justify-between" dir="rtl">
-            <div>
-              <p className="text-sm text-muted-foreground">صافي الإيراد (بعد المصروفات)</p>
-              <p className={`text-3xl font-black ${netRevenue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{netRevenue.toFixed(2)} ج.م</p>
-            </div>
-            <div className="text-4xl">{netRevenue >= 0 ? '📈' : '📉'}</div>
-          </CardContent>
-        </Card>
-
         <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl" className="w-full">
           <TabsList className="mb-6 flex w-full flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
             {[
@@ -579,7 +882,8 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence mode="popLayout">
-                  {activeOrders.map(order => renderOrderCard(order))}
+                  {groupedTableOrders.map(([table, orders]) => renderTableCard(table, orders))}
+                  {remainingOrders.map(order => renderOrderCard(order))}
                 </AnimatePresence>
               </div>
             )}
@@ -697,7 +1001,12 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       </main>
 
       {/* Receipt Dialog */}
-      <Dialog open={!!receiptOrder} onOpenChange={(open) => !open && setReceiptOrder(null)}>
+      <Dialog open={!!receiptOrder || !!receiptTableOrders} onOpenChange={(open) => {
+        if (!open) {
+          setReceiptOrder(null)
+          setReceiptTableOrders(null)
+        }
+      }}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0 gap-0 bg-background border-[#D4AF37]/20">
           <DialogHeader className="sr-only">
             <DialogTitle>فاتورة الطلب</DialogTitle>
@@ -719,6 +1028,27 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
                   <Receipt className="h-4 w-4" />طباعة
                 </Button>
                 <Button variant="ghost" onClick={() => setReceiptOrder(null)} className="gap-2 text-muted-foreground hover:text-red-400">
+                  <X className="h-4 w-4" />إغلاق
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+          {receiptTableOrders && (
+            <>
+              {renderTableReceipt(receiptTableOrders)}
+              <DialogFooter className="p-4 pt-0 gap-2" dir="rtl">
+                {getGroupedTableStatus(receiptTableOrders) === 'READY' && (
+                  <Button onClick={() => markTableAsPaid(receiptTableOrders)} disabled={payingTable === receiptTableOrders[0]?.tableNumber}
+                    className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold">
+                    {payingTable === receiptTableOrders[0]?.tableNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                    تم الدفع
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => window.print()}
+                  className="flex-1 gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
+                  <Receipt className="h-4 w-4" />طباعة
+                </Button>
+                <Button variant="ghost" onClick={() => setReceiptTableOrders(null)} className="gap-2 text-muted-foreground hover:text-red-400">
                   <X className="h-4 w-4" />إغلاق
                 </Button>
               </DialogFooter>

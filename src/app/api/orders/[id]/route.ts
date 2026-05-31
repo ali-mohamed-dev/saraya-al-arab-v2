@@ -48,6 +48,32 @@ export async function PUT(
     if (body.tableNumber !== undefined) updateData.tableNumber = body.tableNumber
     if (body.pickupTime !== undefined) updateData.pickupTime = body.pickupTime
 
+    if (Array.isArray(body.itemsToAdd) && body.itemsToAdd.length > 0) {
+      const itemsToAdd = body.itemsToAdd.map((item: any) => ({
+        orderId: id,
+        mealId: item.mealId,
+        mealTitle: item.mealTitle,
+        mealTitleAr: item.mealTitleAr || '',
+        price: parseFloat(String(item.price)) || 0,
+        quantity: parseInt(String(item.quantity)) || 1,
+        addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+        imageUrl: item.imageUrl || '',
+      }))
+      const addedSubtotal = itemsToAdd.reduce((sum, item) => sum + item.price * item.quantity, 0)
+      const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
+      const addedServiceCharge = Math.round(addedSubtotal * ratio * 100) / 100
+
+      updateData.subtotal = existing.subtotal + addedSubtotal
+      updateData.serviceCharge = existing.serviceCharge + addedServiceCharge
+      updateData.total = existing.total + addedSubtotal + addedServiceCharge
+
+      if (existing.status === 'READY') {
+        updateData.status = 'PREPARING'
+      }
+
+      await db.orderItem.createMany({ data: itemsToAdd })
+    }
+
     const order = await db.order.update({
       where: { id },
       data: updateData,

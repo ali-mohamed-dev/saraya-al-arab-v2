@@ -1774,17 +1774,41 @@ function ShiftManagement({ adminUsername }: { adminUsername: string }) {
     if (!currentShift) return
     setClosingShift(true)
     try {
-      const res = await fetch(`/api/shifts/${currentShift.id}`, {
-        method: 'PUT',
+      // Export CSV + clear cashier/day data on backend
+      const res = await fetch(`/api/shifts/${currentShift.id}/export-and-clear`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endedBy: adminUsername, notes: shiftNotes }),
+        body: JSON.stringify({
+          endedBy: adminUsername,
+          notes: shiftNotes,
+          includeNonDelivered: true,
+        }),
       })
+
       if (res.ok) {
-        toast({ title: 'تم إغلاق الشيفت بنجاح', description: 'تم حفظ بيانات الشيفت' })
+        const data = await res.json().catch(() => null)
+        // Download CSV in browser
+        if (data?.csv) {
+          const blob = new Blob(['\uFEFF' + data.csv], { type: 'text/csv;charset=utf-8;' })
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          const safeShiftId = String(currentShift.id).slice(0, 8)
+          link.download = `shift-${safeShiftId}-today.csv`
+          link.click()
+          URL.revokeObjectURL(url)
+        }
+
+        toast({ title: 'تم إغلاق الشيفت', description: 'تم تصدير التقرير وحذف بيانات اليوم بنجاح' })
         setShowCloseConfirm(false)
         fetchData()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: err?.error || 'فشل تصدير الشيفت أو الحذف', variant: 'destructive' })
       }
-    } catch { /* ignore */ } finally {
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل الاتصال بالخادم', variant: 'destructive' })
+    } finally {
       setClosingShift(false)
     }
   }

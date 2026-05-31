@@ -61,9 +61,29 @@ const ORDER_TYPE_MAP: Record<string, { label: string; color: string }> = {
   DELIVERY: { label: 'ديليفري', color: 'text-purple-400' },
 }
 
-const REFRESH_INTERVAL = 30 // seconds
+const REFRESH_INTERVAL = 5 // seconds
 
 // ── Helper Functions ──────────────────────────────────────────────────────────
+
+function playNotificationSound() {
+  try {
+    const ctx = new AudioContext()
+    if (ctx.state === 'suspended') {
+      void ctx.resume()
+    }
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 880
+    gain.gain.setValueAtTime(0.2, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.35)
+  } catch {
+    // browser may block autoplay without interaction
+  }
+}
 
 function getElapsedMinutes(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000)
@@ -158,30 +178,53 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
   const [refreshCountdown, setRefreshCountdown] = useState(REFRESH_INTERVAL)
   const [relativeTimers, setRelativeTimers] = useState<Record<string, string>>({})
+  const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
+  const [shiftLoading, setShiftLoading] = useState(true)
 
   const prevOrderCountRef = useRef(0)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const fetchShiftStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/shifts?current=true')
+      if (res.ok) {
+        const shift = await res.json()
+        setShiftOpen(!!shift)
+      } else {
+        setShiftOpen(false)
+      }
+    } catch {
+      setShiftOpen(false)
+    } finally {
+      setShiftLoading(false)
+    }
+  }, [])
+
   // ── Fetch orders ─────────────────────────────────────────────────────────
   const fetchOrders = useCallback(async (showLoading = false) => {
+    if (shiftOpen !== true) {
+      setOrders([])
+      setLoading(false)
+      return
+    }
+
     try {
       if (showLoading) setLoading(true)
       setError(null)
 
-      // Fetch all three statuses in parallel
-      const [pendingRes, confirmedRes, preparingRes] = await Promise.all([
-        fetch('/api/orders?status=PENDING'),
+      // Fetch only confirmed and preparing orders for the kitchen.
+      // Pending orders should not appear in the kitchen until confirmed by waiter/cashier/admin.
+      const [confirmedRes, preparingRes] = await Promise.all([
         fetch('/api/orders?status=CONFIRMED'),
         fetch('/api/orders?status=PREPARING'),
       ])
 
-      const pending: Order[] = pendingRes.ok ? (await pendingRes.json()).map(transformOrder) : []
       const confirmed: Order[] = confirmedRes.ok ? (await confirmedRes.json()).map(transformOrder) : []
       const preparing: Order[] = preparingRes.ok ? (await preparingRes.json()).map(transformOrder) : []
 
       // Sort: oldest first (most urgent)
-      const allOrders = [...pending, ...confirmed, ...preparing].sort(
+      const allOrders = [...confirmed, ...preparing].sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       )
 
@@ -189,8 +232,9 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
       if (allOrders.length > prevOrderCountRef.current && prevOrderCountRef.current > 0) {
         setFlashActive(true)
         setTimeout(() => setFlashActive(false), 2000)
-        const newOrder = allOrders.find(o => o.status === 'PENDING')
+        const newOrder = allOrders.find(o => o.status === 'CONFIRMED')
         if (newOrder) {
+          playNotificationSound()
           toast({ title: 'طلب جديد!', description: `طلب رقم #${newOrder.orderNumber}` })
         }
       }
@@ -202,7 +246,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     } finally {
       setLoading(false)
     }
-  }, [toast])
+  }, [toast, shiftOpen])
 
   // ── Update order status ──────────────────────────────────────────────────
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -237,6 +281,17 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Auto-refresh every 30 seconds with countdown ─────────────────────────
   useEffect(() => {
+    fetchShiftStatus()
+    const shiftInterval = setInterval(fetchShiftStatus, 10000)
+    return () => clearInterval(shiftInterval)
+  }, [fetchShiftStatus])
+
+  useEffect(() => {
+    if (shiftOpen !== true) {
+      if (shiftOpen === false) setLoading(false)
+      return
+    }
+
     fetchOrders(true)
 
     // Countdown timer (every second)
@@ -259,7 +314,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
       if (countdownRef.current) clearInterval(countdownRef.current)
       if (refreshRef.current) clearInterval(refreshRef.current)
     }
-  }, [fetchOrders])
+  }, [fetchOrders, shiftOpen])
 
   // ── Update relative timers every 10 seconds ──────────────────────────────
   useEffect(() => {
@@ -291,8 +346,58 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
+  if (shiftLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+        <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
+          <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (shiftLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+        <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
+          <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (shiftOpen === false) {
+    return (
+      <div className="min-h-screen bg-background" dir="rtl">
+        <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
+          <div className="mx-auto flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10">
+                <ChefHat className="h-5 w-5 text-[#D4AF37]" />
+              </div>
+              <div>
+                <h1 className="text-base md:text-lg font-bold text-[#D4AF37]">شاشة المطبخ</h1>
+                <p className="text-[10px] md:text-xs text-muted-foreground">سرايا العرب - المطبخ</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 md:gap-3">
+              <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground hover:text-red-400">
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </header>
+        <main className="mx-auto max-w-7xl p-4 md:p-6">
+          <div className="rounded-3xl border border-red-500/20 bg-red-500/5 p-8 text-center">
+            <h2 className="mb-2 text-2xl font-bold text-red-600">المطبخ مغلق</h2>
+            <p className="text-muted-foreground">المطبخ مغلق حتى يقوم المسؤول ببدء شيفت جديد.</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   // ── Computed stats ───────────────────────────────────────────────────────
-  const pendingCount = orders.filter(o => o.status === 'PENDING').length
   const confirmedCount = orders.filter(o => o.status === 'CONFIRMED').length
   const preparingCount = orders.filter(o => o.status === 'PREPARING').length
   const totalCount = orders.length
@@ -379,13 +484,13 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
       <div className="border-b border-border/30 bg-muted/30">
         <div className="mx-auto flex items-center justify-center gap-3 md:gap-6 px-3 py-2.5">
           <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-yellow-500 animate-pulse" />
-            <span className="text-xs md:text-sm font-medium text-yellow-400">جديد: {pendingCount}</span>
+            <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+            <span className="text-xs md:text-sm font-medium text-blue-400">مؤكد: {confirmedCount}</span>
           </div>
           <Separator orientation="vertical" className="h-5 bg-border/30" />
           <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-            <span className="text-xs md:text-sm font-medium text-blue-400">مؤكد: {confirmedCount}</span>
+            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <span className="text-xs md:text-sm font-medium text-amber-400">قيد التحضير: {preparingCount}</span>
           </div>
           <Separator orientation="vertical" className="h-5 bg-border/30" />
           <div className="flex items-center gap-2">
