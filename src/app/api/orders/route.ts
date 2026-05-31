@@ -9,10 +9,11 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status')
     const type = searchParams.get('type')
 
+    const shiftId = searchParams.get('shiftId')
     const where: Record<string, string> = {}
-    if (status) where.status = status
-    if (type) where.type = type
-
+        if (status) where.status = status
+        if (type) where.type = type
+        if (shiftId) where.shiftId = shiftId
     const orders = await db.order.findMany({
       where,
       include: { items: true },
@@ -50,6 +51,45 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    if (type === 'DINE_IN' && tableNumber) {
+  const existingOrder = await db.order.findFirst({
+    where: {
+      tableNumber: tableNumber,
+      status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] },
+    },
+    include: { items: true },
+  })
+
+  if (existingOrder) {
+    const updatedOrder = await db.order.update({
+        where: { id: existingOrder.id },
+        data: {
+          subtotal: existingOrder.subtotal + parseFloat(subtotal),
+          serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
+          total: existingOrder.total + parseFloat(total),
+          notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
+          items: {
+            create: items.map((item: {
+              mealId: string; mealTitle: string; mealTitleAr: string
+              price: number; quantity: number; addOns: string; imageUrl?: string
+            }) => ({
+              mealId: item.mealId,
+              mealTitle: item.mealTitle,
+              mealTitleAr: item.mealTitleAr || '',
+              price: parseFloat(String(item.price)),
+              quantity: parseInt(String(item.quantity)),
+              addOns: item.addOns || '[]',
+              imageUrl: item.imageUrl || '',
+            })),
+          },
+        },
+        include: { items: true },
+      })
+      return NextResponse.json(updatedOrder, { status: 200 })
+    }
+  }
+
 
     // Get max orderNumber and increment
     const maxOrder = await db.order.findFirst({

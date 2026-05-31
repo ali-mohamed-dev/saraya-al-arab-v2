@@ -7,7 +7,8 @@ import {
   Trash2, Edit3, RefreshCw, Check, X, Loader2, Star, Package, Search,
   Clock, ChefHat, CheckCircle, DollarSign, ClipboardList,
   AlertTriangle, Maximize, Minimize, Flame, Utensils, Phone, MapPin, Timer,
-  Users, Shield, TrendingDown, Download, PlayCircle, StopCircle, UserPlus, KeyRound
+  Users, Shield, TrendingDown, Download, PlayCircle, StopCircle, UserPlus, KeyRound,
+  BadgeCheck
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -508,10 +509,9 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
-        fetchOrders()
-        fetchStats()
-        fetchKitchenOrders()
-        // Status updated - polling will pick up the change
+        await fetchOrders()
+        await fetchStats()
+        await fetchKitchenOrders()
       } else {
         const data = await res.json().catch(() => ({}))
         toast({ title: 'خطأ', description: data.error || 'فشل في تحديث الحالة', variant: 'destructive' })
@@ -578,28 +578,27 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
     // Poll every 5 seconds for updates
     const pollInterval = setInterval(async () => {
-      try {
-        // Check for new orders
-        const res = await fetch('/api/orders?status=PENDING')
-        if (res.ok) {
-          const rawData = await res.json()
-          const pendingOrders = rawData.map(transformOrder)
-          if (pendingOrders.length > prevCount) {
-            // New order detected!
-            const newOrder = pendingOrders[0]
-            toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
-            setKitchenFlash(true)
-            setTimeout(() => setKitchenFlash(false), 2000)
-            prevCount = pendingOrders.length
-          }
+  try {
+    const res = await fetch('/api/orders?status=PENDING')
+    if (res.ok) {
+      const rawData = await res.json()
+      const pendingOrders = rawData.map(transformOrder)
+        if (pendingOrders.length > prevCount && prevCount > 0) {
+          const newOrder = pendingOrders[0]
+          toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
+          setKitchenFlash(true)
+          setTimeout(() => setKitchenFlash(false), 2000)
+          prevCount = pendingOrders.length
+          // فقط لما يجي أوردر جديد
+          fetchOrders()
+          fetchStats()
+          fetchKitchenOrders()
+        } else {
+          prevCount = pendingOrders.length
         }
-
-        // Refresh all data
-        fetchOrders()
-        fetchStats()
-        fetchKitchenOrders()
-      } catch { /* ignore polling errors */ }
-    }, 5000)
+      }
+    } catch { /* ignore polling errors */ }
+  }, 5000)
 
     return () => {
       clearTimeout(initTimer)
@@ -1162,158 +1161,171 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                   <p>لا توجد طلبات حالياً</p>
                 </div>
               ) : (
-                <ScrollArea className="h-[55vh] overflow-y-auto">
-                  <div className="space-y-3">
-                    <AnimatePresence>
-                      {orders.map((order) => {
-                        const statusInfo = ORDER_STATUS_MAP[order.status] ?? ORDER_STATUS_MAP.PENDING
-                        const typeInfo = ORDER_TYPE_MAP[order.type] ?? ORDER_TYPE_MAP.DINE_IN
-                        const isUpdating = updatingOrderId === order.id
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <AnimatePresence mode="popLayout">
+                    {orders.map((order) => {
+                      const statusInfo = ORDER_STATUS_MAP[order.status] ?? ORDER_STATUS_MAP.PENDING
+                      const typeInfo = ORDER_TYPE_MAP[order.type] ?? ORDER_TYPE_MAP.DINE_IN
+                      const isUpdating = updatingOrderId === order.id
+                      const isReady = order.status === 'READY'
 
-                        return (
-                          <motion.div
-                            key={order.id}
-                            initial={{ opacity: 0, y: 15 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, x: -20 }}
-                            layout
-                          >
-                            <Card className={`border ${statusInfo.bg} overflow-hidden`}>
-                              <CardContent className="p-4" dir="rtl">
-                                {/* Order Header */}
-                                <div className="flex items-start justify-between mb-3">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-xl font-black text-[#D4AF37]">#{order.orderNumber}</span>
-                                    <Badge className={`gap-1.5 ${statusInfo.bg} ${statusInfo.color} border`}>
-                                      {statusInfo.label}
-                                    </Badge>
-                                    <Badge variant="outline" className={`gap-1.5 ${typeInfo.color} border-current/30`}>
-                                      {typeInfo.icon}
-                                      {typeInfo.label}
-                                    </Badge>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                    <Timer className="h-3 w-3" />
-                                    {relativeTimers[order.id] ?? getRelativeTime(order.createdAt)}
-                                  </div>
-                                </div>
-
-                                {/* Customer Info */}
-                                <div className="mb-3 space-y-1">
-                                  <div className="flex items-center gap-2 text-sm">
-                                    <span className="font-semibold">{order.customerName}</span>
-                                    <span className="text-muted-foreground flex items-center gap-1">
-                                      <Phone className="h-3 w-3" />
-                                      {order.customerPhone}
-                                    </span>
-                                  </div>
-                                  {order.tableNumber && (
-                                    <div className="flex items-center gap-1 text-xs text-blue-400">
-                                      <Utensils className="h-3 w-3" />
-                                      طاولة رقم {order.tableNumber}
-                                    </div>
-                                  )}
-                                  {order.deliveryAddress && (
-                                    <div className="flex items-center gap-1 text-xs text-purple-400">
-                                      <MapPin className="h-3 w-3" />
-                                      {order.deliveryAddress}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Items */}
-                                <div className="rounded-lg bg-muted/30 p-3 mb-3">
-                                  {order.items.map((item, idx) => (
-                                    <div key={item.id ?? idx} className="flex items-center justify-between py-1 text-sm">
-                                      <div className="flex items-center gap-2">
-                                        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#D4AF37]/10 text-xs font-bold text-[#D4AF37]">
-                                          {item.quantity}x
-                                        </span>
-                                        <span>{item.mealTitleAr || item.mealTitle}</span>
-                                      </div>
-                                      <span className="text-muted-foreground">{(item.price * item.quantity).toFixed(2)} ر.س</span>
-                                    </div>
-                                  ))}
-                                  <Separator className="my-2 bg-[#D4AF37]/10" />
-                                  <div className="flex items-center justify-between font-bold">
-                                    <span>الإجمالي</span>
-                                    <span className="text-[#D4AF37]">{order.total.toFixed(2)} ج.م</span>
-                                  </div>
-                                </div>
-
-                                {order.notes && (
-                                  <div className="mb-3 rounded-lg bg-amber-500/5 border border-amber-500/20 p-2 text-xs text-amber-300">
-                                    <span className="font-bold">ملاحظات:</span> {order.notes}
-                                  </div>
-                                )}
-
-                                {/* Action Buttons */}
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {order.status === 'PENDING' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateOrderStatus(order.id, 'CONFIRMED')}
-                                      disabled={isUpdating}
-                                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 h-9"
-                                    >
-                                      {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                                      تأكيد
-                                    </Button>
-                                  )}
-                                  {order.status === 'CONFIRMED' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateOrderStatus(order.id, 'PREPARING')}
-                                      disabled={isUpdating}
-                                      className="gap-1.5 bg-[#D4AF37] text-black hover:bg-[#C9A431] h-9"
-                                    >
-                                      {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Flame className="h-3.5 w-3.5" />}
-                                      بدء التحضير
-                                    </Button>
-                                  )}
-                                  {order.status === 'PREPARING' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateOrderStatus(order.id, 'READY')}
-                                      disabled={isUpdating}
-                                      className="gap-1.5 bg-blue-600 text-white hover:bg-blue-700 h-9"
-                                    >
-                                      {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                                      جاهز
-                                    </Button>
-                                  )}
-                                  {order.status === 'READY' && (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => updateOrderStatus(order.id, 'DELIVERED')}
-                                      disabled={isUpdating}
-                                      className="gap-1.5 bg-green-600 text-white hover:bg-green-700 h-9"
-                                    >
-                                      {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                                      تم التسليم
-                                    </Button>
-                                  )}
-                                  {order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => setCancelTarget(order)}
-                                      disabled={isUpdating}
-                                      className="gap-1.5 border-red-500/30 text-red-400 hover:bg-red-500/10 h-9"
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                      إلغاء
-                                    </Button>
-                                  )}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </motion.div>
-                        )
-                      })}
-                    </AnimatePresence>
+                      return (
+                        <motion.div
+                          key={order.id}
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -30 }}
+                          transition={{ duration: 0.3 }}
+                          layout
+                        >
+            <Card
+              className={`border overflow-hidden transition-all duration-200 ${
+                isReady
+                  ? 'border-green-500/50 bg-green-500/5'
+                  : 'border-border/50 bg-card'
+              }`}
+              dir="rtl"
+            >
+              <div className={`h-1 ${isReady ? 'bg-gradient-to-l from-green-500 to-green-400/40' : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'}`} />
+              <CardContent className="p-4 space-y-3">
+                {/* Header */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
+                      <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+                        #{order.orderNumber}
+                      </span>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.bg}`}>
+                          <span className={statusInfo.color}>{statusInfo.label}</span>
+                        </span>
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${typeInfo.color}`}>
+                          {typeInfo.icon}{typeInfo.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 mt-1">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground">
+                          {relativeTimers[order.id] || getRelativeTime(order.createdAt)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </ScrollArea>
+                  {order.tableNumber && (
+                    <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px] gap-1">
+                      <Utensils className="h-2.5 w-2.5" />طاولة {order.tableNumber}
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Customer */}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span>{order.customerName}</span>
+                  {order.customerPhone && (
+                    <span className="flex items-center gap-1" dir="ltr">
+                      <Phone className="h-3 w-3" />{order.customerPhone}
+                    </span>
+                  )}
+                  {order.deliveryAddress && (
+                    <span className="flex items-center gap-1 truncate">
+                      <MapPin className="h-3 w-3" />{order.deliveryAddress}
+                    </span>
+                  )}
+                </div>
+
+                {/* Items */}
+                <div className="space-y-1.5">
+                  {order.items.slice(0, 3).map(item => (
+                    <div key={item.id} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">
+                          {item.quantity}
+                        </span>
+                        <span className="truncate">{item.mealTitleAr || item.mealTitle}</span>
+                      </div>
+                      <span className="text-muted-foreground flex-shrink-0 mr-2">
+                        {(item.price * item.quantity).toFixed(2)} ج.م
+                      </span>
+                    </div>
+                  ))}
+                  {order.items.length > 3 && (
+                    <p className="text-[10px] text-muted-foreground text-center">
+                      +{order.items.length - 3} أصناف أخرى
+                    </p>
+                  )}
+                  {order.notes && (
+                    <p className="text-[10px] text-amber-400 border border-amber-500/20 rounded p-1">
+                      ⚠️ {order.notes}
+                    </p>
+                  )}
+                </div>
+
+                <Separator className="bg-border/20" />
+
+                {/* Footer */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground">الإجمالي</p>
+                    <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+                      {order.total.toFixed(2)} ج.م
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {order.status === 'PENDING' && (
+                      <Button size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'CONFIRMED')}
+                        disabled={isUpdating}
+                        className="gap-1 bg-green-600 text-white hover:bg-green-700 h-8 px-3 text-xs font-bold">
+                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                        تأكيد
+                      </Button>
+                    )}
+                    {order.status === 'CONFIRMED' && (
+                      <Button size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'PREPARING')}
+                        disabled={isUpdating}
+                        className="gap-1 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-8 px-3 text-xs font-bold">
+                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Flame className="h-3 w-3" />}
+                        تحضير
+                      </Button>
+                    )}
+                    {order.status === 'PREPARING' && (
+                      <Button size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'READY')}
+                        disabled={isUpdating}
+                        className="gap-1 bg-blue-600 text-white hover:bg-blue-700 h-8 px-3 text-xs font-bold">
+                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                        جاهز
+                      </Button>
+                    )}
+                    {order.status === 'READY' && (
+                      <Button size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'DELIVERED')}
+                        disabled={isUpdating}
+                        className="gap-1 bg-green-600 text-white hover:bg-green-500 h-8 px-3 text-xs font-bold">
+                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
+                        تسليم
+                      </Button>
+                    )}
+                    {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => setCancelTarget(order)}
+                        disabled={isUpdating}
+                        className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 h-8 px-3">
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+                        </motion.div>
+                      )
+                    })}
+                  </AnimatePresence>
+                </div>
               )}
             </div>
           </TabsContent>
@@ -1736,13 +1748,10 @@ function ShiftManagement({ adminUsername }: { adminUsername: string }) {
         if (shift) {
           const [expRes, ordRes] = await Promise.all([
             fetch(`/api/expenses?shiftId=${shift.id}`),
-            fetch(`/api/orders`),
+            fetch(`/api/orders?shiftId=${shift.id}&status=DELIVERED`),
           ])
           if (expRes.ok) setExpenses(await expRes.json())
-          if (ordRes.ok) {
-            const allOrders = await ordRes.json()
-            setShiftOrders(allOrders.filter((o: Record<string, unknown>) => o.shiftId === shift.id || !o.shiftId))
-          }
+          if (ordRes.ok) setShiftOrders(await ordRes.json())
         }
       }
       if (shiftsRes.ok) {

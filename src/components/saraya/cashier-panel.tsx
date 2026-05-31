@@ -222,7 +222,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchOrders = useCallback(async (showLoading = false) => {
+const fetchOrders = useCallback(async (showLoading = false) => {
     if (shiftOpen !== true) {
       setAllOrders([])
       setLoadingOrders(false)
@@ -230,11 +230,16 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     }
     try {
       if (showLoading) setLoadingOrders(true)
-      const statuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERED']
+      const statuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY']
       const results = await Promise.all(
         statuses.map(s => fetch(`/api/orders?status=${s}`).then(r => r.ok ? r.json() : []))
       )
-      const orders: Order[] = results.flat().map(transformOrder)
+      let deliveredData: Order[] = []
+      if (currentShiftId) {
+        const deliveredRes = await fetch(`/api/orders?status=DELIVERED&shiftId=${currentShiftId}`)
+        deliveredData = deliveredRes.ok ? (await deliveredRes.json()).map(transformOrder) : []
+      }
+      const orders: Order[] = [...results.flat().map(transformOrder), ...deliveredData]
       const previousStatus = prevOrderStatusRef.current
 
       const newPending = orders.filter((o) =>
