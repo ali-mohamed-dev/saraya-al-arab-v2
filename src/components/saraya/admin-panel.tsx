@@ -253,6 +253,8 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [orderStatusFilter, setOrderStatusFilter] = useState('ALL')
   const [orderTypeFilter, setOrderTypeFilter] = useState('ALL')
   const [orderStats, setOrderStats] = useState<OrderStats | null>(null)
+  const [currentShiftId, setCurrentShiftId] = useState<string | null>(null)
+  const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
 
@@ -481,23 +483,42 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       const params = new URLSearchParams()
       if (orderStatusFilter !== 'ALL') params.set('status', orderStatusFilter)
       if (orderTypeFilter !== 'ALL') params.set('type', orderTypeFilter)
+      if (currentShiftId) params.set('shiftId', currentShiftId)
       const res = await fetch(`/api/orders?${params.toString()}`)
       if (res.ok) {
         const rawData = await res.json()
         setOrders(rawData.map(transformOrder))
       }
     } catch { /* ignore */ } finally { setLoadingOrders(false) }
-  }, [orderStatusFilter, orderTypeFilter])
+  }, [orderStatusFilter, orderTypeFilter, currentShiftId])
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (shiftId?: string) => {
     try {
-      const res = await fetch('/api/orders/stats')
+      const params = new URLSearchParams()
+      if (shiftId) params.set('shiftId', shiftId)
+      const url = `/api/orders/stats${params.toString() ? `?${params.toString()}` : ''}`
+      const res = await fetch(url)
       if (res.ok) setOrderStats(await res.json())
     } catch { /* ignore */ }
   }, [])
 
+  const fetchCurrentShift = useCallback(async () => {
+    try {
+      const res = await fetch('/api/shifts?current=true')
+      if (res.ok) {
+        const shift = await res.json()
+        setCurrentShiftId(shift?.id || null)
+      } else {
+        setCurrentShiftId(null)
+      }
+    } catch {
+      setCurrentShiftId(null)
+    }
+  }, [])
+
+  useEffect(() => { fetchCurrentShift() }, [fetchCurrentShift])
   useEffect(() => { fetchOrders() }, [fetchOrders])
-  useEffect(() => { fetchStats() }, [])
+  useEffect(() => { fetchStats(currentShiftId ?? undefined) }, [fetchStats, currentShiftId])
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
@@ -559,52 +580,45 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   }, [orders, kitchenOrders])
 
   // ── Polling-based real-time (Vercel compatible) ───────────────────────────
-  // Poll for new orders every 5 seconds on the admin panel
+  // Poll for new orders every 5 seconds on the admin panel, and refresh only on new orders
   useEffect(() => {
-    let prevCount = 0
-    let prevKitchenCount = 0
+    if (!currentShiftId) return
 
-    // Initial fetch
-    fetchOrders()
-    fetchKitchenOrders()
-    fetchStats()
+    const initializePendingCount = async () => {
+      try {
+        const params = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
+        const res = await fetch(`/api/orders?${params.toString()}`)
+        if (!res.ok) return
+        const pendingOrders = (await res.json()).map(transformOrder)
+        lastOrderCountRef.current = pendingOrders.length
+      } catch { /* ignore */ }
+    }
 
-    // Track initial counts
-    const initTimer = setTimeout(() => {
-      prevCount = orders.length
-      prevKitchenCount = kitchenOrders.length
-      lastOrderCountRef.current = orders.length
-    }, 2000)
+    initializePendingCount()
 
-    // Poll every 5 seconds for updates
     const pollInterval = setInterval(async () => {
-  try {
-    const res = await fetch('/api/orders?status=PENDING')
-    if (res.ok) {
-      const rawData = await res.json()
-      const pendingOrders = rawData.map(transformOrder)
-        if (pendingOrders.length > prevCount && prevCount > 0) {
+      try {
+        const params = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
+        const res = await fetch(`/api/orders?${params.toString()}`)
+        if (!res.ok) return
+        const pendingOrders = (await res.json()).map(transformOrder)
+        if (pendingOrders.length > lastOrderCountRef.current) {
           const newOrder = pendingOrders[0]
           toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
           setKitchenFlash(true)
           setTimeout(() => setKitchenFlash(false), 2000)
-          prevCount = pendingOrders.length
-          // فقط لما يجي أوردر جديد
+          lastOrderCountRef.current = pendingOrders.length
+          setNewOrderAlert(newOrder)
+          setTimeout(() => setNewOrderAlert(null), 5000)
           fetchOrders()
-          fetchStats()
+          fetchStats(currentShiftId)
           fetchKitchenOrders()
-        } else {
-          prevCount = pendingOrders.length
         }
-      }
-    } catch { /* ignore polling errors */ }
-  }, 5000)
+      } catch { /* ignore polling errors */ }
+    }, 5000)
 
-    return () => {
-      clearTimeout(initTimer)
-      clearInterval(pollInterval)
-    }
-  }, [])
+    return () => clearInterval(pollInterval)
+  }, [currentShiftId, fetchOrders, fetchKitchenOrders, fetchStats, toast])
 
   // ── Fullscreen ────────────────────────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
@@ -1091,7 +1105,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                       </div>
                       <div>
                         <p className="text-2xl font-bold text-[#D4AF37]">{(orderStats?.todayRevenue ?? 0).toFixed(0)}</p>
-                        <p className="text-xs text-muted-foreground">إيراد اليوم (ر.س)</p>
+                        <p className="text-xs text-muted-foreground">{currentShiftId ? 'إيراد الشيفت الحالي (ر.س)' : 'إيراد اليوم (ر.س)'}</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -1106,10 +1120,15 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                       <ClipboardList className="h-4 w-4" />
                       تصفية الطلبات
                     </h3>
-                    <Button variant="outline" size="sm" onClick={() => { fetchOrders(); fetchStats() }} className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8">
-                      <RefreshCw className="h-3 w-3" />
-                      تحديث
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => { fetchOrders(); fetchStats(currentShiftId ?? undefined) }} className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8">
+                        <RefreshCw className="h-3 w-3" />
+                        تحديث يدوي
+                      </Button>
+                      {newOrderAlert && (
+                        <span className="rounded-full bg-green-500/10 text-green-500 px-3 py-1 text-xs font-semibold">طلب جديد #{newOrderAlert.orderNumber} وصل</span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground">حالة الطلب:</p>
