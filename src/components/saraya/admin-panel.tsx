@@ -79,7 +79,7 @@ interface Order {
   id: string
   orderNumber: number
   type: 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY'
-  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'READY_TO_PAY' | 'DELIVERED' | 'CANCELLED'
   customerName: string
   customerPhone: string
   deliveryAddress?: string
@@ -89,6 +89,7 @@ interface Order {
   serviceCharge: number
   total: number
   notes?: string
+  cancelledBy?: string
   createdAt: string
   updatedAt: string
 }
@@ -98,6 +99,8 @@ interface OrderStats {
   pendingOrders: number
   preparingOrders: number
   readyOrders: number
+  readyToPayOrders: number
+  cancelledOrders: number
   todayRevenue: number
   todayOrders: number
 }
@@ -111,6 +114,7 @@ const CATEGORIES = [
   { value: 'حلويات', label: 'حلويات / Desserts' },
   { value: 'مشروبات', label: 'مشروبات / Beverages' },
   { value: 'أطباق رئيسية', label: 'أطباق رئيسية / Main Courses' },
+  { value: 'اصناف الصالة', label: 'اصناف الصالة / Hall Items' },
 ]
 
 const ORDER_STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -118,6 +122,7 @@ const ORDER_STATUS_MAP: Record<string, { label: string; color: string; bg: strin
   CONFIRMED: { label: 'مؤكد', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
   PREPARING: { label: 'قيد التحضير', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/30' },
   READY: { label: 'جاهز', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/30' },
+  READY_TO_PAY: { label: 'جاهز للدفع', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
   DELIVERED: { label: 'تم التسليم', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
   CANCELLED: { label: 'ملغي', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
 }
@@ -134,6 +139,7 @@ const STATUS_FILTERS = [
   { value: 'CONFIRMED', label: 'مؤكد' },
   { value: 'PREPARING', label: 'قيد التحضير' },
   { value: 'READY', label: 'جاهز' },
+  { value: 'READY_TO_PAY', label: 'جاهز للدفع' },
   { value: 'DELIVERED', label: 'تم التسليم' },
   { value: 'CANCELLED', label: 'ملغي' },
 ]
@@ -158,6 +164,10 @@ function getRelativeTime(dateStr: string): string {
   return `منذ ${Math.floor(diff / 86400)} يوم`
 }
 
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+}
+
 function getElapsedMinutes(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000)
 }
@@ -178,6 +188,7 @@ function transformOrder(raw: Record<string, unknown>): Order {
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
     notes: (raw.notes as string) || undefined,
+    cancelledBy: (raw.cancelledBy as string) || undefined,
     createdAt: (raw.createdAt as string) || new Date().toISOString(),
     updatedAt: (raw.updatedAt as string) || new Date().toISOString(),
     items: items.map((item) => {
@@ -207,8 +218,10 @@ function transformOrder(raw: Record<string, unknown>): Order {
 
 export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const { toast } = useToast()
-  // Track last order count for polling-based new order detection
-  const lastOrderCountRef = useRef(0)
+  const adminUsername = typeof window !== 'undefined' ? sessionStorage.getItem('saraya-staff-username') || 'admin' : 'admin'
+  // Track last order counts for polling-based real-time refresh
+  const lastPendingCountRef = useRef(0)
+  const lastReadyToPayCountRef = useRef(0)
 
   // ── Meals state ───────────────────────────────────────────────────────────
   const [meals, setMeals] = useState<Meal[]>([])
@@ -249,6 +262,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Orders state ──────────────────────────────────────────────────────────
   const [orders, setOrders] = useState<Order[]>([])
+  const [cancelledOrders, setCancelledOrders] = useState<Order[]>([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [orderStatusFilter, setOrderStatusFilter] = useState('ALL')
   const [orderTypeFilter, setOrderTypeFilter] = useState('ALL')
@@ -487,10 +501,26 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       const res = await fetch(`/api/orders?${params.toString()}`)
       if (res.ok) {
         const rawData = await res.json()
-        setOrders(rawData.map(transformOrder))
+        const allOrders = rawData.map(transformOrder)
+        setOrders(allOrders.filter((order) => order.status !== 'CANCELLED'))
       }
     } catch { /* ignore */ } finally { setLoadingOrders(false) }
   }, [orderStatusFilter, orderTypeFilter, currentShiftId])
+
+  const fetchCancelledOrders = useCallback(async () => {
+    if (!currentShiftId) {
+      setCancelledOrders([])
+      return
+    }
+    try {
+      const params = new URLSearchParams({ status: 'CANCELLED', shiftId: currentShiftId })
+      const res = await fetch(`/api/orders?${params.toString()}`)
+      if (res.ok) {
+        const rawData = await res.json()
+        setCancelledOrders(rawData.map(transformOrder))
+      }
+    } catch { /* ignore */ }
+  }, [currentShiftId])
 
   const fetchStats = useCallback(async (shiftId?: string) => {
     try {
@@ -501,6 +531,45 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       if (res.ok) setOrderStats(await res.json())
     } catch { /* ignore */ }
   }, [])
+
+  const printOrder = (order: Order) => {
+    const content = `
+      <html>
+        <head>
+          <title>Order #${order.orderNumber}</title>
+          <style>body{font-family: sans-serif;direction: rtl;text-align: right;}table{width:100%;border-collapse: collapse;}td,th{padding:8px;border:1px solid #ddd;}h1,h2{margin:0 0 8px;} .muted{color:#666;font-size:0.9rem;}</style>
+        </head>
+        <body>
+          <h1>فاتورة الطلب #${order.orderNumber}</h1>
+          <p class="muted">الحالة: ${ORDER_STATUS_MAP[order.status].label}</p>
+          <p>الزبون: ${order.customerName}</p>
+          <p>الهاتف: ${order.customerPhone || '-'} ${order.tableNumber ? ` | طاولة ${order.tableNumber}` : ''}</p>
+          ${order.deliveryAddress ? `<p>العنوان: ${order.deliveryAddress}</p>` : ''}
+          <table>
+            <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead>
+            <tbody>
+              ${order.items.map(item => `
+                <tr>
+                  <td>${item.mealTitleAr || item.mealTitle}</td>
+                  <td>${item.quantity}</td>
+                  <td>${(item.price * item.quantity).toFixed(2)} ج.م</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="muted">الإجمالي: ${order.total.toFixed(2)} ج.م</p>
+          ${order.notes ? `<p class="muted">ملاحظات: ${order.notes}</p>` : ''}
+          ${order.status === 'CANCELLED' && order.cancelledBy ? `<p class="muted">ملغي بواسطة: ${order.cancelledBy}</p>` : ''}
+          <script>window.print();</script>
+        </body>
+      </html>
+    `
+    const printWindow = window.open('', '_blank', 'width=700,height=900')
+    if (printWindow) {
+      printWindow.document.write(content)
+      printWindow.document.close()
+    }
+  }
 
   const fetchCurrentShift = useCallback(async () => {
     try {
@@ -518,20 +587,27 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => { fetchCurrentShift() }, [fetchCurrentShift])
   useEffect(() => { fetchOrders() }, [fetchOrders])
+  useEffect(() => { fetchCancelledOrders() }, [fetchCancelledOrders])
   useEffect(() => { fetchStats(currentShiftId ?? undefined) }, [fetchStats, currentShiftId])
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
+      const payload: Record<string, unknown> = { status: newStatus }
+      if (newStatus === 'CANCELLED') {
+        payload.cancelledBy = adminUsername
+      }
+
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
         await fetchOrders()
-        await fetchStats()
+        await fetchCancelledOrders()
+        await fetchStats(currentShiftId ?? undefined)
         await fetchKitchenOrders()
       } else {
         const data = await res.json().catch(() => ({}))
@@ -584,32 +660,59 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     if (!currentShiftId) return
 
-    const initializePendingCount = async () => {
+    const initializeCounts = async () => {
       try {
-        const params = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
-        const res = await fetch(`/api/orders?${params.toString()}`)
-        if (!res.ok) return
-        const pendingOrders = (await res.json()).map(transformOrder)
-        lastOrderCountRef.current = pendingOrders.length
+        const pendingParams = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
+        const readyToPayParams = new URLSearchParams({ status: 'READY_TO_PAY', shiftId: currentShiftId })
+
+        const [pendingRes, readyRes] = await Promise.all([
+          fetch(`/api/orders?${pendingParams.toString()}`),
+          fetch(`/api/orders?${readyToPayParams.toString()}`),
+        ])
+
+        if (!pendingRes.ok || !readyRes.ok) return
+
+        const pendingOrders = (await pendingRes.json()).map(transformOrder)
+        const readyToPayOrders = (await readyRes.json()).map(transformOrder)
+
+        lastPendingCountRef.current = pendingOrders.length
+        lastReadyToPayCountRef.current = readyToPayOrders.length
       } catch { /* ignore */ }
     }
 
-    initializePendingCount()
+    initializeCounts()
 
     const pollInterval = setInterval(async () => {
       try {
-        const params = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
-        const res = await fetch(`/api/orders?${params.toString()}`)
-        if (!res.ok) return
-        const pendingOrders = (await res.json()).map(transformOrder)
-        if (pendingOrders.length > lastOrderCountRef.current) {
-          const newOrder = pendingOrders[0]
-          toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
+        const pendingParams = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
+        const readyToPayParams = new URLSearchParams({ status: 'READY_TO_PAY', shiftId: currentShiftId })
+
+        const [pendingRes, readyRes] = await Promise.all([
+          fetch(`/api/orders?${pendingParams.toString()}`),
+          fetch(`/api/orders?${readyToPayParams.toString()}`),
+        ])
+
+        if (!pendingRes.ok || !readyRes.ok) return
+
+        const pendingOrders = (await pendingRes.json()).map(transformOrder)
+        const readyToPayOrders = (await readyRes.json()).map(transformOrder)
+
+        const pendingChanged = pendingOrders.length > lastPendingCountRef.current
+        const readyToPayChanged = readyToPayOrders.length !== lastReadyToPayCountRef.current
+
+        if (pendingChanged || readyToPayChanged) {
+          if (pendingChanged) {
+            const newOrder = pendingOrders[0]
+            toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
+          }
+          if (readyToPayChanged && readyToPayOrders.length > lastReadyToPayCountRef.current) {
+            toast({ title: 'طلب جاهز للدفع', description: `عدد الطلبات الجاهزة للدفع الآن ${readyToPayOrders.length}` })
+          }
+
           setKitchenFlash(true)
           setTimeout(() => setKitchenFlash(false), 2000)
-          lastOrderCountRef.current = pendingOrders.length
-          setNewOrderAlert(newOrder)
-          setTimeout(() => setNewOrderAlert(null), 5000)
+          lastPendingCountRef.current = pendingOrders.length
+          lastReadyToPayCountRef.current = readyToPayOrders.length
           fetchOrders()
           fetchStats(currentShiftId)
           fetchKitchenOrders()
@@ -1059,6 +1162,19 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
               {/* Stats Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+                  <Card className="border-emerald-500/20 bg-emerald-500/5">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/10">
+                        <DollarSign className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-emerald-400">{orderStats?.readyToPayOrders ?? 0}</p>
+                        <p className="text-xs text-muted-foreground">جاهز للدفع</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
                   <Card className="border-yellow-500/20 bg-yellow-500/5">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-yellow-500/10">
@@ -1071,7 +1187,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                     </CardContent>
                   </Card>
                 </motion.div>
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
                   <Card className="border-[#D4AF37]/20 bg-[#D4AF37]/5">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#D4AF37]/10">
@@ -1084,7 +1200,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                     </CardContent>
                   </Card>
                 </motion.div>
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
                   <Card className="border-green-500/20 bg-green-500/5">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-green-500/10">
@@ -1097,7 +1213,22 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                     </CardContent>
                   </Card>
                 </motion.div>
-                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mt-3">
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+                  <Card className="border-red-500/20 bg-red-500/5">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-red-500/10">
+                        <AlertTriangle className="h-5 w-5 text-red-400" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-bold text-red-400">{orderStats?.cancelledOrders ?? 0}</p>
+                        <p className="text-xs text-muted-foreground">طلبات ملغاة</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
                   <Card className="border-[#D4AF37]/20 bg-[#D4AF37]/5">
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#D4AF37]/10">
@@ -1240,17 +1371,24 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                 </div>
 
                 {/* Customer */}
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{order.customerName}</span>
-                  {order.customerPhone && (
-                    <span className="flex items-center gap-1" dir="ltr">
-                      <Phone className="h-3 w-3" />{order.customerPhone}
-                    </span>
-                  )}
-                  {order.deliveryAddress && (
-                    <span className="flex items-center gap-1 truncate">
-                      <MapPin className="h-3 w-3" />{order.deliveryAddress}
-                    </span>
+                <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-3">
+                    <span>{order.customerName}</span>
+                    {order.customerPhone && (
+                      <span className="flex items-center gap-1" dir="ltr">
+                        <Phone className="h-3 w-3" />{order.customerPhone}
+                      </span>
+                    )}
+                    {order.deliveryAddress && (
+                      <span className="flex items-center gap-1 truncate">
+                        <MapPin className="h-3 w-3" />{order.deliveryAddress}
+                      </span>
+                    )}
+                  </div>
+                  {order.status === 'CANCELLED' && order.cancelledBy && (
+                    <div className="text-[10px] text-red-300">
+                      ملغي بواسطة: {order.cancelledBy}
+                    </div>
                   )}
                 </div>
 
@@ -1292,6 +1430,11 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline"
+                      onClick={() => printOrder(order)}
+                      className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold">
+                      <Download className="h-3 w-3" /> طباعة
+                    </Button>
                     {order.status === 'PENDING' && (
                       <Button size="sm"
                         onClick={() => updateOrderStatus(order.id, 'CONFIRMED')}
@@ -1328,7 +1471,16 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                         تسليم
                       </Button>
                     )}
-                    {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
+                    {order.status === 'READY_TO_PAY' && (
+                      <Button size="sm"
+                        onClick={() => updateOrderStatus(order.id, 'DELIVERED')}
+                        disabled={isUpdating}
+                        className="gap-1 bg-emerald-600 text-white hover:bg-emerald-500 h-8 px-3 text-xs font-bold">
+                        {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
+                        دفع
+                      </Button>
+                    )}
+                    {order.status !== 'CANCELLED' && (
                       <Button size="sm" variant="outline"
                         onClick={() => setCancelTarget(order)}
                         disabled={isUpdating}
@@ -1344,6 +1496,44 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                       )
                     })}
                   </AnimatePresence>
+                </div>
+              )}
+
+              {cancelledOrders.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold">الطلبات الملغية</h3>
+                      <p className="text-xs text-muted-foreground">تظهر هنا الطلبات التي تم إلغاؤها من قبل الأدمن مع اسم المستخدم.</p>
+                    </div>
+                    <Badge variant="outline" className="text-red-400 border-red-500/30">
+                      {cancelledOrders.length} ملغي
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {cancelledOrders.map((order) => (
+                      <Card key={order.id} className="border-red-500/20 bg-red-500/5">
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold">طلب #{order.orderNumber}</p>
+                              <p className="text-[11px] text-muted-foreground mt-1">{ORDER_TYPE_MAP[order.type].label} • {ORDER_STATUS_MAP[order.status].label}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-red-400">{order.total.toFixed(2)} ج.م</p>
+                              <p className="text-[11px] text-muted-foreground">{formatTime(order.updatedAt)}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 text-[12px] text-muted-foreground">
+                            <p>الزبون: {order.customerName || 'غير محدد'}</p>
+                            {order.customerPhone && <p>الهاتف: {order.customerPhone}</p>}
+                            {order.tableNumber && <p>طاولة: {order.tableNumber}</p>}
+                            {order.cancelledBy && <p className="text-red-300">ملغي بواسطة: {order.cancelledBy}</p>}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1699,7 +1889,8 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
               تأكيد إلغاء الطلب
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              هل أنت متأكد من إلغاء الطلب رقم #{cancelTarget?.orderNumber}؟ لا يمكن التراجع عن هذا الإجراء.
+              هل أنت متأكد من إلغاء الطلب رقم #{cancelTarget?.orderNumber}؟
+              سيتم تحويله إلى ملغي وسيُحذف من الإيراد.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
@@ -1827,7 +2018,7 @@ function ShiftManagement({ adminUsername }: { adminUsername: string }) {
           URL.revokeObjectURL(url)
         }
 
-        toast({ title: 'تم إغلاق الشيفت', description: 'تم تصدير التقرير وحذف بيانات اليوم بنجاح' })
+        toast({ title: 'تم إغلاق الشيفت', description: 'تم تصدير التقرير بنجاح وتم الاحتفاظ ببيانات الشيفت' })
         setShowCloseConfirm(false)
         fetchData()
       } else {

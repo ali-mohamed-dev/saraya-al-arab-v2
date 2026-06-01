@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       subtotal,
       serviceCharge,
       total,
+      shiftId,
     } = body
 
     if (!type || !items || items.length === 0) {
@@ -56,39 +57,116 @@ export async function POST(request: NextRequest) {
   const existingOrder = await db.order.findFirst({
     where: {
       tableNumber: tableNumber,
-      status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] },
+      status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
     },
     include: { items: true },
   })
 
   if (existingOrder) {
-    const updatedOrder = await db.order.update({
-        where: { id: existingOrder.id },
-        data: {
-          subtotal: existingOrder.subtotal + parseFloat(subtotal),
-          serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
-          total: existingOrder.total + parseFloat(total),
-          notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
-          items: {
-            create: items.map((item: {
-              mealId: string; mealTitle: string; mealTitleAr: string
-              price: number; quantity: number; addOns: string; imageUrl?: string
-            }) => ({
-              mealId: item.mealId,
-              mealTitle: item.mealTitle,
-              mealTitleAr: item.mealTitleAr || '',
-              price: parseFloat(String(item.price)),
-              quantity: parseInt(String(item.quantity)),
-              addOns: item.addOns || '[]',
-              imageUrl: item.imageUrl || '',
-            })),
-          },
-        },
-        include: { items: true },
-      })
-      return NextResponse.json(updatedOrder, { status: 200 })
+    type IncomingItem = {
+      mealId: string
+      mealTitle: string
+      mealTitleAr: string
+      price: number
+      quantity: number
+      addOns: string
+      category: string
+      imageUrl: string
     }
+
+    const existingItems = existingOrder.items as unknown as Array<{
+      id: string
+      mealId: string
+      category: string
+      addOns: string
+      quantity: number
+    }>
+
+    const itemUpdates: Array<Promise<unknown>> = []
+    const createData: Array<{
+      orderId: string
+      mealId: string
+      mealTitle: string
+      mealTitleAr: string
+      price: number
+      quantity: number
+      addOns: string
+      category: string
+      imageUrl: string
+      lastAddedQuantity: number
+    }> = []
+
+    const normalizedIncomingItems: IncomingItem[] = items.map((item: any) => ({
+      mealId: item.mealId,
+      mealTitle: item.mealTitle,
+      mealTitleAr: item.mealTitleAr || '',
+      price: parseFloat(String(item.price)) || 0,
+      quantity: parseInt(String(item.quantity)) || 1,
+      addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+      category: (item.category || '').trim(),
+      imageUrl: item.imageUrl || '',
+    }))
+
+    const mergedIncomingItems: IncomingItem[] = Object.values(
+      normalizedIncomingItems.reduce((acc, item) => {
+        const key = `${item.mealId}|${item.category}|${item.addOns}`
+        if (!acc[key]) acc[key] = { ...item }
+        else acc[key].quantity += item.quantity
+        return acc
+      }, {} as Record<string, IncomingItem>)
+    )
+
+    mergedIncomingItems.forEach((item) => {
+      const existingItem = existingItems.find((existingItem) =>
+        existingItem.mealId === item.mealId &&
+        existingItem.category === item.category &&
+        existingItem.addOns === item.addOns
+      )
+
+      if (existingItem) {
+        itemUpdates.push(db.orderItem.update({
+          where: { id: existingItem.id },
+          data: {
+            quantity: existingItem.quantity + item.quantity,
+            lastAddedQuantity: item.quantity,
+          },
+        }))
+      } else {
+        createData.push({
+          orderId: existingOrder.id,
+          mealId: item.mealId,
+          mealTitle: item.mealTitle,
+          mealTitleAr: item.mealTitleAr,
+          price: item.price,
+          quantity: item.quantity,
+          addOns: item.addOns,
+          category: item.category,
+          imageUrl: item.imageUrl,
+          lastAddedQuantity: item.quantity,
+        })
+      }
+    })
+
+    await Promise.all(itemUpdates)
+    if (createData.length > 0) {
+      await db.orderItem.createMany({ data: createData })
+    }
+
+    const updatedOrder = await db.order.update({
+      where: { id: existingOrder.id },
+      data: {
+        subtotal: existingOrder.subtotal + parseFloat(subtotal),
+        serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
+        total: existingOrder.total + parseFloat(total),
+        notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
+        status: existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY' ? 'PREPARING' : existingOrder.status,
+      },
+      include: { items: true },
+    })
+
+    return NextResponse.json(updatedOrder, { status: 200 })
   }
+}
 
 
     // Get max orderNumber and increment
@@ -102,6 +180,7 @@ export async function POST(request: NextRequest) {
       data: {
         orderNumber,
         type,
+        shiftId: shiftId || '',
         customerName: customerName || '',
         customerPhone: customerPhone || '',
         deliveryAddress: deliveryAddress || '',
@@ -120,7 +199,8 @@ export async function POST(request: NextRequest) {
               mealTitleAr: string
               price: number
               quantity: number
-              addOns: string
+              addOns: unknown
+              category?: string
               imageUrl?: string
             }) => ({
               mealId: item.mealId,
@@ -128,7 +208,8 @@ export async function POST(request: NextRequest) {
               mealTitleAr: item.mealTitleAr || '',
               price: parseFloat(String(item.price)),
               quantity: parseInt(String(item.quantity)),
-              addOns: item.addOns || '[]',
+              addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+              category: item.category || '',
               imageUrl: item.imageUrl || '',
             })
           ),

@@ -40,7 +40,7 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
         const res = await fetch('/api/meals')
         if (res.ok) {
           const data: Meal[] = await res.json()
-          setMeals(data.filter((m) => m.isActive))
+          setMeals(data.filter((m) => m.isActive && m.category !== 'اصناف الصالة'))
         }
       } catch (error) {
         console.error('Error fetching meals:', error)

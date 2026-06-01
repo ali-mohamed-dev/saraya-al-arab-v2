@@ -41,6 +41,7 @@ export function CartSummary() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [orderNumber, setOrderNumber] = useState<number | null>(null)
   const [orderId, setOrderId] = useState<string | null>(null)
+  const [hasMounted, setHasMounted] = useState(false)
 
   // No socket.io needed - admin polls for new orders
 
@@ -51,14 +52,16 @@ export function CartSummary() {
   const getTotalItems = useCartStore((s) => s.getTotalItems)
   const getTotalPrice = useCartStore((s) => s.getTotalPrice)
 
-  const totalItems = getTotalItems()
+  const totalItems = hasMounted ? getTotalItems() : 0
   // getTotalPrice already includes 12% service charge
   // For takeaway/delivery: subtotal = price without service charge
   // For dine-in: totalPrice = subtotal + 12%
-  const rawTotal = items.reduce((sum, item) => {
-    const addOnTotal = item.addOns?.reduce((s, a) => s + a.price, 0) || 0
-    return sum + (item.price + addOnTotal) * item.quantity
-  }, 0)
+  const rawTotal = hasMounted
+    ? items.reduce((sum, item) => {
+        const addOnTotal = item.addOns?.reduce((s, a) => s + a.price, 0) || 0
+        return sum + (item.price + addOnTotal) * item.quantity
+      }, 0)
+    : 0
   const subtotal = rawTotal
   const serviceCharge = subtotal * 0.12
   const totalPriceWithService = subtotal + serviceCharge
@@ -77,6 +80,10 @@ export function CartSummary() {
     setOrderNumber(null)
     setOrderId(null)
     setIsSubmitting(false)
+  }, [])
+
+  useEffect(() => {
+    setHasMounted(true)
   }, [])
 
   const canProceedToConfirm = () => {
@@ -188,7 +195,7 @@ export function CartSummary() {
           aria-label="فتح ملخص الطلب"
         >
           <ShoppingCart className="h-6 w-6 text-black" />
-          {totalItems > 0 && (
+          {hasMounted && totalItems > 0 && (
             <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold text-white">
               {totalItems}
             </span>
@@ -237,7 +244,7 @@ export function CartSummary() {
               ))}
             </div>
           )}
-          {items.length > 0 && step === 'cart' && (
+          {hasMounted && items.length > 0 && step === 'cart' && (
             <p className="text-sm text-gray-400">
               {totalItems} {totalItems === 1 ? 'عنصر' : totalItems === 2 ? 'عنصران' : 'عناصر'}
             </p>

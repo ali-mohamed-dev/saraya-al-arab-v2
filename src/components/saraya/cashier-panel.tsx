@@ -40,7 +40,7 @@ interface Order {
   id: string
   orderNumber: number
   type: 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY'
-  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'READY_TO_PAY' | 'DELIVERED' | 'CANCELLED'
   customerName: string
   customerPhone: string
   deliveryAddress?: string
@@ -69,6 +69,7 @@ const ORDER_STATUS_MAP: Record<string, { label: string; color: string; bg: strin
   CONFIRMED: { label: 'مؤكد', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
   PREPARING: { label: 'قيد التحضير', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/30' },
   READY: { label: 'جاهز', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/30' },
+  READY_TO_PAY: { label: 'جاهز للدفع', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
   DELIVERED: { label: 'تم الدفع', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
   CANCELLED: { label: 'ملغي', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
 }
@@ -201,6 +202,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
           if (shift) {
             setCurrentShiftId(shift.id)
             setShiftOpen(true)
+            await fetch(`/api/shifts/${shift.id}/assign-open-orders`, { method: 'POST' })
           } else {
             setCurrentShiftId('')
             setShiftOpen(false)
@@ -230,9 +232,11 @@ const fetchOrders = useCallback(async (showLoading = false) => {
     }
     try {
       if (showLoading) setLoadingOrders(true)
-      const statuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY']
+      const statuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY']
       const results = await Promise.all(
-        statuses.map(s => fetch(`/api/orders?status=${s}`).then(r => r.ok ? r.json() : []))
+        statuses.map((status) =>
+          fetch(`/api/orders?status=${status}&shiftId=${currentShiftId}`).then((r) => r.ok ? r.json() : [])
+        )
       )
       let deliveredData: Order[] = []
       if (currentShiftId) {
@@ -246,7 +250,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
         o.status === 'PENDING' && o.type !== 'DINE_IN' && !previousStatus[o.id]
       )
       const newReady = orders.filter((o) =>
-        o.status === 'READY' && o.type !== 'DINE_IN' && previousStatus[o.id] && previousStatus[o.id] !== 'READY'
+        (o.status === 'READY_TO_PAY' || (o.status === 'READY' && o.type !== 'DINE_IN')) && previousStatus[o.id] && previousStatus[o.id] !== o.status
       )
 
       if (Object.keys(previousStatus).length > 0 && newPending.length > 0) {
@@ -426,7 +430,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
 
   // Computed
   const activeOrders = allOrders.filter(o => !['DELIVERED', 'CANCELLED'].includes(o.status))
-  const readyOrders = allOrders.filter(o => o.status === 'READY')
+  const readyOrders = allOrders.filter(o => o.status === 'READY_TO_PAY' || (o.status === 'READY' && o.type !== 'DINE_IN'))
   const deliveredOrders = allOrders.filter(o => o.status === 'DELIVERED')
   const todayRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
@@ -628,17 +632,41 @@ const fetchOrders = useCallback(async (showLoading = false) => {
   }
 
   const getGroupedTableStatus = (orders: Order[]) => {
+    if (orders.some((o) => o.status === 'READY_TO_PAY')) return 'READY_TO_PAY'
+    const dineInOnly = orders.every((o) => o.type === 'DINE_IN')
+    if (dineInOnly) {
+      if (orders.some((o) => o.status === 'PREPARING')) return 'PREPARING'
+      if (orders.some((o) => o.status === 'CONFIRMED')) return 'CONFIRMED'
+      if (orders.some((o) => o.status === 'READY')) return 'PREPARING'
+      return 'PENDING'
+    }
     if (orders.some((o) => o.status === 'READY')) return 'READY'
     if (orders.some((o) => o.status === 'PREPARING')) return 'PREPARING'
     if (orders.some((o) => o.status === 'CONFIRMED')) return 'CONFIRMED'
     return 'PENDING'
   }
 
+  const getCashierDisplayStatus = (order: Order) => {
+    if (order.type === 'DINE_IN' && order.status === 'READY') {
+      return {
+        label: 'قيد التشغيل',
+        color: ORDER_STATUS_MAP.PREPARING.color,
+        bg: ORDER_STATUS_MAP.PREPARING.bg,
+      }
+    }
+
+    return {
+      label: ORDER_STATUS_MAP[order.status]?.label || order.status,
+      color: ORDER_STATUS_MAP[order.status]?.color || '',
+      bg: ORDER_STATUS_MAP[order.status]?.bg || '',
+    }
+  }
+
   const renderTableCard = (tableNumber: string, orders: Order[]) => {
     const groupStatus = getGroupedTableStatus(orders)
     const statusInfo = ORDER_STATUS_MAP[groupStatus]
     const total = orders.reduce((sum, order) => sum + order.total, 0)
-    const isReady = groupStatus === 'READY'
+    const isReady = groupStatus === 'READY_TO_PAY'
 
     return (
       <motion.div key={`table-${tableNumber}`} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }} layout>
@@ -671,15 +699,18 @@ const fetchOrders = useCallback(async (showLoading = false) => {
               </div>
             </div>
             <div className="space-y-1.5">
-              {orders.slice(0, 2).map((order) => (
-                <div key={order.id} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">#{order.orderNumber}</span>
-                    <span className="truncate">{ORDER_STATUS_MAP[order.status]?.label || order.status}</span>
+              {orders.slice(0, 2).map((order) => {
+                const displayStatus = getCashierDisplayStatus(order)
+                return (
+                  <div key={order.id} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">#{order.orderNumber}</span>
+                      <span className="truncate">{displayStatus.label}</span>
+                    </div>
+                    <span className="text-muted-foreground flex-shrink-0">{order.total.toFixed(2)} ج.م</span>
                   </div>
-                  <span className="text-muted-foreground flex-shrink-0">{order.total.toFixed(2)} ج.م</span>
-                </div>
-              ))}
+                )
+              })}
               {orders.length > 2 && <p className="text-[10px] text-muted-foreground text-center">+{orders.length - 2} طلبات إضافية</p>}
             </div>
             <Separator className="bg-border/20" />
@@ -700,9 +731,9 @@ const fetchOrders = useCallback(async (showLoading = false) => {
   }
 
   const renderOrderCard = (order: Order) => {
-    const statusInfo = ORDER_STATUS_MAP[order.status]
+    const statusInfo = getCashierDisplayStatus(order)
     const typeInfo = ORDER_TYPE_MAP[order.type]
-    const isReady = order.status === 'READY'
+    const isReady = order.status === 'READY_TO_PAY' || (order.status === 'READY' && order.type !== 'DINE_IN')
 
     return (
       <motion.div key={order.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }} layout>
@@ -1021,7 +1052,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
             <>
               {renderReceipt(receiptOrder)}
               <DialogFooter className="p-4 pt-0 gap-2" dir="rtl">
-                {receiptOrder.status === 'READY' && (
+                {(receiptOrder.status === 'READY_TO_PAY' || (receiptOrder.status === 'READY' && receiptOrder.type !== 'DINE_IN')) && (
                   <Button onClick={() => markAsPaid(receiptOrder.id)} disabled={updatingOrderId === receiptOrder.id}
                     className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold">
                     {updatingOrderId === receiptOrder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
@@ -1042,7 +1073,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
             <>
               {renderTableReceipt(receiptTableOrders)}
               <DialogFooter className="p-4 pt-0 gap-2" dir="rtl">
-                {getGroupedTableStatus(receiptTableOrders) === 'READY' && (
+                {(getGroupedTableStatus(receiptTableOrders) === 'READY_TO_PAY' || getGroupedTableStatus(receiptTableOrders) === 'READY') && (
                   <Button onClick={() => markTableAsPaid(receiptTableOrders)} disabled={payingTable === receiptTableOrders[0]?.tableNumber}
                     className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold">
                     {payingTable === receiptTableOrders[0]?.tableNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}

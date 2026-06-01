@@ -47,6 +47,7 @@ export async function PUT(
     if (body.deliveryAddress !== undefined) updateData.deliveryAddress = body.deliveryAddress
     if (body.tableNumber !== undefined) updateData.tableNumber = body.tableNumber
     if (body.pickupTime !== undefined) updateData.pickupTime = body.pickupTime
+    if (body.shiftId !== undefined) updateData.shiftId = body.shiftId
 
     if (Array.isArray(body.itemsToAdd) && body.itemsToAdd.length > 0) {
       const itemsToAdd = body.itemsToAdd.map((item: any) => ({
@@ -57,8 +58,28 @@ export async function PUT(
         price: parseFloat(String(item.price)) || 0,
         quantity: parseInt(String(item.quantity)) || 1,
         addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+        category: item.category || '',
         imageUrl: item.imageUrl || '',
       }))
+
+      const existingItems = await db.orderItem.findMany({ where: { orderId: id } })
+      const createOrUpdatePromises = itemsToAdd.map(async (item) => {
+        const existingItem = existingItems.find((existingItem) =>
+          existingItem.mealId === item.mealId &&
+          existingItem.category === item.category &&
+          existingItem.addOns === item.addOns
+        )
+
+        if (existingItem) {
+          return db.orderItem.update({
+            where: { id: existingItem.id },
+            data: { quantity: existingItem.quantity + item.quantity },
+          })
+        }
+
+        return db.orderItem.create({ data: item })
+      })
+
       const addedSubtotal = itemsToAdd.reduce((sum, item) => sum + item.price * item.quantity, 0)
       const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
       const addedServiceCharge = Math.round(addedSubtotal * ratio * 100) / 100
@@ -71,8 +92,48 @@ export async function PUT(
         updateData.status = 'PREPARING'
       }
 
-      await db.orderItem.createMany({ data: itemsToAdd })
+      await Promise.all(createOrUpdatePromises)
     }
+
+    if (Array.isArray(body.removedItemIds) && body.removedItemIds.length > 0) {
+      await db.orderItem.deleteMany({
+        where: { id: { in: body.removedItemIds } },
+      })
+    }
+
+    if (Array.isArray(body.itemUpdates) && body.itemUpdates.length > 0) {
+      await Promise.all(
+        body.itemUpdates.map(async (item: any) => {
+          if (!item.id) return null
+          const quantity = parseInt(String(item.quantity)) || 0
+          if (quantity <= 0) {
+            await db.orderItem.delete({ where: { id: item.id } })
+            return null
+          }
+
+          return db.orderItem.update({
+            where: { id: item.id },
+            data: {
+              mealId: item.mealId,
+              mealTitle: item.mealTitle,
+              mealTitleAr: item.mealTitleAr || '',
+              price: parseFloat(String(item.price)) || 0,
+              quantity,
+              addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+              category: item.category || '',
+              imageUrl: item.imageUrl || '',
+            },
+          })
+        })
+      )
+    }
+
+    const finalItems = await db.orderItem.findMany({ where: { orderId: id } })
+    const finalSubtotal = finalItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+    const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
+    updateData.subtotal = finalSubtotal
+    updateData.serviceCharge = Math.round(finalSubtotal * ratio * 100) / 100
+    updateData.total = updateData.subtotal + (updateData.serviceCharge as number)
 
     const order = await db.order.update({
       where: { id },
@@ -89,11 +150,12 @@ export async function PUT(
 
 // DELETE /api/orders/[id] - Cancel an order (set status to CANCELLED)
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
+    const payload = await request.json()
 
     const existing = await db.order.findUnique({ where: { id } })
     if (!existing) {
@@ -104,13 +166,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Order is already cancelled' }, { status: 400 })
     }
 
-    if (existing.status === 'DELIVERED') {
-      return NextResponse.json({ error: 'Cannot cancel a delivered order' }, { status: 400 })
-    }
-
     const order = await db.order.update({
       where: { id },
-      data: { status: 'CANCELLED' },
+      data: {
+        status: 'CANCELLED',
+        cancelledBy: (payload?.cancelledBy as string) || 'admin',
+      },
       include: { items: true },
     })
 

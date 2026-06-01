@@ -65,7 +65,6 @@ function getViewForRole(role: string): View {
 }
 
 function getInitialView(): View {
-  if (typeof window === 'undefined') return 'menu'
   const authStatus = sessionStorage.getItem('saraya-admin-auth')
   const savedRole = sessionStorage.getItem('saraya-staff-role')
   if (authStatus === 'true' && savedRole) return getViewForRole(savedRole)
@@ -73,7 +72,11 @@ function getInitialView(): View {
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>(getInitialView)
+  const [view, setView] = useState<View>('menu')
+
+  useEffect(() => {
+    setView(getInitialView())
+  }, [])
 
   const handleAdminClick = () => {
     const authStatus = sessionStorage.getItem('saraya-admin-auth')

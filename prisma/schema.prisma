@@ -69,6 +69,7 @@ model Order {
   tableNumber     String      @default("")
   pickupTime      String      @default("")
   notes           String      @default("")
+  cancelledBy     String      @default("")
   subtotal        Float
   serviceCharge   Float       @default(0)
   total           Float
@@ -87,7 +88,9 @@ model OrderItem {
   price       Float
   quantity    Int
   addOns      String   @default("[]") // JSON array of {id, title, titleAr, price}
+  category    String   @default("")
   imageUrl    String   @default("")
+  lastAddedQuantity Int @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

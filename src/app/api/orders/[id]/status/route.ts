@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 // Valid status transitions
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  PENDING: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PREPARING', 'CANCELLED'],
-  PREPARING: ['READY', 'CANCELLED'],
-  READY: ['DELIVERED', 'CANCELLED'],
-  DELIVERED: [],
+  PENDING: ['CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY', 'CANCELLED'],
+  CONFIRMED: ['PREPARING', 'READY', 'READY_TO_PAY', 'CANCELLED'],
+  PREPARING: ['READY', 'READY_TO_PAY', 'CANCELLED'],
+  READY: ['READY_TO_PAY', 'DELIVERED', 'CANCELLED'],
+  READY_TO_PAY: ['DELIVERED', 'CANCELLED'],
+  DELIVERED: ['CANCELLED'],
   CANCELLED: [],
 }
 
@@ -18,13 +19,14 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const { status } = await request.json()
+    const payload = await request.json()
+    const status = payload?.status
 
     if (!status) {
       return NextResponse.json({ error: 'Status is required' }, { status: 400 })
     }
 
-    const validStatuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED']
+    const validStatuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY', 'DELIVERED', 'CANCELLED']
     if (!validStatuses.includes(status)) {
       return NextResponse.json({ error: `Invalid status: ${status}` }, { status: 400 })
     }
@@ -44,7 +46,10 @@ export async function PUT(
 
     const order = await db.order.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        ...(status === 'CANCELLED' ? { cancelledBy: (payload.cancelledBy as string) || 'admin' } : {}),
+      },
       include: { items: true },
     })
 

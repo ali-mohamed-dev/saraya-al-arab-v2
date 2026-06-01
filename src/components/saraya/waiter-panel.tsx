@@ -44,6 +44,7 @@ interface OrderItem {
   mealTitleAr: string
   quantity: number
   price: number
+  category?: string
   addOns?: { title: string; titleAr: string; price: number }[]
   imageUrl?: string
 }
@@ -52,7 +53,7 @@ interface Order {
   id: string
   orderNumber: number
   type: 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY'
-  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED'
+  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'READY_TO_PAY' | 'DELIVERED' | 'CANCELLED'
   customerName: string
   customerPhone: string
   deliveryAddress?: string
@@ -157,6 +158,7 @@ function transformOrder(raw: Record<string, unknown>): Order {
         mealTitleAr: (item.mealTitleAr as string) || '',
         price: Number(item.price ?? 0),
         quantity: Number(item.quantity ?? 1),
+        category: (item.category as string) || undefined,
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
       }
@@ -172,6 +174,7 @@ interface CartItem {
   mealTitleAr: string
   price: number
   quantity: number
+  category: string
   imageUrl: string
   addOns: { title: string; titleAr: string; price: number }[]
 }
@@ -206,10 +209,24 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Order detail dialog ───────────────────────────────────────────────────
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [editableOrderItems, setEditableOrderItems] = useState<OrderItem[] | null>(null)
+  const [removedOrderItemIds, setRemovedOrderItemIds] = useState<string[]>([])
+  const [savingOrderEdits, setSavingOrderEdits] = useState(false)
+
+  useEffect(() => {
+    if (selectedOrder) {
+      setEditableOrderItems(selectedOrder.items)
+      setRemovedOrderItemIds([])
+    } else {
+      setEditableOrderItems(null)
+      setRemovedOrderItemIds([])
+    }
+  }, [selectedOrder])
 
   // ── Relative time refresh ─────────────────────────────────────────────────
   const [timeKey, setTimeKey] = useState(0)
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
+  const [currentShiftId, setCurrentShiftId] = useState<string>('')
   const [shiftLoading, setShiftLoading] = useState(true)
   const prevOrderStatusRef = useRef<Record<string, Order['status']>>({})
 
@@ -219,11 +236,17 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       if (res.ok) {
         const shift = await res.json()
         setShiftOpen(!!shift)
+        setCurrentShiftId(shift?.id || '')
+        if (shift?.id) {
+          await fetch(`/api/shifts/${shift.id}/assign-open-orders`, { method: 'POST' })
+        }
       } else {
         setShiftOpen(false)
+        setCurrentShiftId('')
       }
     } catch {
       setShiftOpen(false)
+      setCurrentShiftId('')
     } finally {
       setShiftLoading(false)
     }
@@ -231,7 +254,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Fetch active orders ───────────────────────────────────────────────────
   const fetchActiveOrders = useCallback(async () => {
-    if (shiftOpen !== true) {
+    if (shiftOpen !== true || !currentShiftId) {
       setOrders([])
       setLoadingOrders(false)
       return
@@ -239,10 +262,10 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
     try {
       const [pendingRes, confirmedRes, preparingRes, readyRes] = await Promise.all([
-        fetch('/api/orders?status=PENDING'),
-        fetch('/api/orders?status=CONFIRMED'),
-        fetch('/api/orders?status=PREPARING'),
-        fetch('/api/orders?status=READY'),
+        fetch(`/api/orders?status=PENDING&shiftId=${currentShiftId}`),
+        fetch(`/api/orders?status=CONFIRMED&shiftId=${currentShiftId}`),
+        fetch(`/api/orders?status=PREPARING&shiftId=${currentShiftId}`),
+        fetch(`/api/orders?status=READY&shiftId=${currentShiftId}`),
       ])
       const pending = pendingRes.ok ? (await pendingRes.json()).map(transformOrder) : []
       const confirmed = confirmedRes.ok ? (await confirmedRes.json()).map(transformOrder) : []
@@ -394,6 +417,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           mealTitleAr: meal.titleAr,
           price: meal.price,
           quantity: 1,
+          category: meal.category,
           imageUrl: meal.imageUrl,
           addOns: [],
         },
@@ -439,6 +463,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
     try {
       const orderPayload = {
         type: orderType,
+        shiftId: currentShiftId || undefined,
         tableNumber: orderType === 'DINE_IN' ? tableNumber.trim() : undefined,
         customerName: customerName.trim() || 'ويتر',
         customerPhone: customerPhone.trim() || '',
@@ -449,6 +474,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           mealTitleAr: item.mealTitleAr,
           price: item.price,
           quantity: item.quantity,
+          category: item.category,
           addOns: item.addOns,
           imageUrl: item.imageUrl,
         })),
@@ -464,6 +490,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            shiftId: currentShiftId || undefined,
             itemsToAdd: orderPayload.items,
             notes: orderPayload.notes,
           }),
@@ -495,6 +522,98 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  const handleEditItemQuantity = (itemId: string, delta: number) => {
+    setEditableOrderItems((prev) => {
+      if (!prev) return prev
+      return prev.flatMap((item) => {
+        if (item.id !== itemId) return item
+        const nextQuantity = Math.max(0, item.quantity + delta)
+        if (nextQuantity <= 0) {
+          setRemovedOrderItemIds((ids) => [...new Set([...ids, itemId])])
+          return []
+        }
+        return [{ ...item, quantity: nextQuantity }]
+      })
+    })
+  }
+
+  const handleChangeOrderItemMeal = (itemId: string, mealId: string) => {
+    const meal = meals.find((m) => m.id === mealId)
+    if (!meal) return
+    setEditableOrderItems((prev) =>
+      prev
+        ? prev.map((item) =>
+            item.id === itemId
+              ? {
+                  ...item,
+                  mealId: meal.id,
+                  mealTitle: meal.title,
+                  mealTitleAr: meal.titleAr,
+                  price: meal.price,
+                  category: meal.category,
+                  imageUrl: meal.imageUrl,
+                  addOns: [],
+                }
+              : item
+          )
+        : prev
+    )
+  }
+
+  const handleRemoveOrderItem = (itemId: string) => {
+    setEditableOrderItems((prev) => prev?.filter((item) => item.id !== itemId) ?? null)
+    setRemovedOrderItemIds((ids) => [...new Set([...ids, itemId])])
+  }
+
+  const handleSaveOrderEdits = async () => {
+    if (!selectedOrder || !editableOrderItems) return
+
+    setSavingOrderEdits(true)
+    try {
+const requestBody: Record<string, unknown> = {
+      customerName: selectedOrder.customerName,
+      customerPhone: selectedOrder.customerPhone,
+      tableNumber: selectedOrder.tableNumber,
+    }
+
+    if (selectedOrder.status === 'PENDING') {
+      requestBody.itemUpdates = editableOrderItems.map((item) => ({
+        id: item.id,
+        mealId: item.mealId,
+        mealTitle: item.mealTitle,
+        mealTitleAr: item.mealTitleAr,
+        price: item.price,
+        quantity: item.quantity,
+        addOns: item.addOns || [],
+        category: item.category || '',
+        imageUrl: item.imageUrl || '',
+      }))
+      requestBody.removedItemIds = removedOrderItemIds
+    }
+
+    const response = await fetch(`/api/orders/${selectedOrder.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'فشل في حفظ التعديلات')
+      }
+
+      const updatedOrder = transformOrder(await response.json())
+      setSelectedOrder(updatedOrder)
+      setOrders((prev) => prev.map((order) => (order.id === updatedOrder.id ? updatedOrder : order)))
+      toast({ title: 'تم حفظ التعديلات', description: `تم تحديث طلب رقم #${updatedOrder.orderNumber}` })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'حدث خطأ'
+      toast({ title: 'خطأ', description: message, variant: 'destructive' })
+    } finally {
+      setSavingOrderEdits(false)
+    }
+  }
+
   // ── Group orders by table ─────────────────────────────────────────────────
   const groupedOrders = orders.reduce<Record<string, Order[]>>((acc, order) => {
     const key = order.type === 'DINE_IN' && order.tableNumber
@@ -522,7 +641,8 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       meal.titleAr?.includes(searchQuery) ||
       meal.title?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchCategory = filterCategory === 'الكل' || meal.category === filterCategory
-    return matchSearch && matchCategory
+    const isHallItem = meal.category === 'اصناف الصالة'
+    return !isHallItem && matchSearch && matchCategory
   })
 
   // ── Count active orders ──────────────────────────────────────────────────
@@ -775,7 +895,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
       {/* ─── New Order Dialog ───────────────────────────────────────────────── */}
       <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
-        <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0" dir="rtl">
+        <DialogContent className="w-full max-w-[95vw] md:max-w-[92vw] max-h-[90vh] overflow-y-auto p-0 gap-0" dir="rtl">
           <DialogHeader className="p-6 pb-4 border-b border-border/50">
             <DialogTitle className="text-[#D4AF37] flex items-center gap-2 text-lg">
               <ShoppingCart className="h-5 w-5" />
@@ -786,9 +906,9 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col md:flex-row md:max-h-[70vh]">
+          <div className="flex h-full min-h-[360px] flex-col overflow-hidden md:flex-row-reverse">
             {/* Left: Meal selection */}
-            <div className="flex-1 flex flex-col border-l border-border/50 overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col md:border-r border-border/50 overflow-hidden">
               {/* Order type & table */}
               <div className="p-4 border-b border-border/30 space-y-3">
                 <Label className="text-sm font-semibold text-[#D4AF37]">نوع الطلب</Label>
@@ -896,7 +1016,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
               </div>
 
               {/* Meal list */}
-              <ScrollArea className="flex-1">
+              <ScrollArea className="flex-1 min-h-0 overflow-hidden">
                 <div className="p-3 space-y-2">
                   {loadingMeals ? (
                     <div className="flex items-center justify-center py-12">
@@ -971,7 +1091,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
             </div>
 
             {/* Right: Cart summary */}
-            <div className="w-full md:w-80 flex flex-col border-t md:border-t-0 border-border/50 bg-muted/20">
+            <div className="w-full md:w-80 min-h-0 flex flex-col border-t md:border-t-0 border-border/50 bg-muted/20 overflow-hidden">
               <div className="p-4 border-b border-border/30">
                 <h3 className="font-bold text-[#D4AF37] flex items-center gap-2 text-sm">
                   <ShoppingCart className="h-4 w-4" />
@@ -984,7 +1104,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                 </h3>
               </div>
 
-              <ScrollArea className="flex-1 max-h-48 md:max-h-none">
+              <ScrollArea className="max-h-[24rem] min-h-0 overflow-hidden">
                 <div className="p-3 space-y-2">
                   {cart.length === 0 ? (
                     <div className="py-8 text-center text-muted-foreground text-sm">
@@ -1092,7 +1212,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
       {/* ─── Order Detail Dialog ────────────────────────────────────────────── */}
       <Dialog open={!!selectedOrder} onOpenChange={(open) => !open && setSelectedOrder(null)}>
-        <DialogContent className="max-w-lg" dir="rtl">
+        <DialogContent className="max-w-lg max-h-[calc(100vh-4rem)] overflow-hidden" dir="rtl">
           {selectedOrder && (
             <>
               <DialogHeader>
@@ -1105,7 +1225,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4">
+              <ScrollArea className="space-y-5 max-h-[calc(100vh-20rem)] overflow-hidden pr-4">
                 {/* Order meta */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
@@ -1120,10 +1240,18 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                       {ORDER_TYPE_MAP[selectedOrder.type]?.label}
                     </p>
                   </div>
-                  {selectedOrder.tableNumber && (
+                  {selectedOrder.type === 'DINE_IN' && (
                     <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
                       <p className="text-xs text-muted-foreground">رقم الطاولة</p>
-                      <p className="mt-1 text-sm font-semibold text-[#D4AF37]">{selectedOrder.tableNumber}</p>
+                      {selectedOrder.status !== 'DELIVERED' && selectedOrder.status !== 'CANCELLED' ? (
+                        <Input
+                          value={selectedOrder.tableNumber ?? ''}
+                          onChange={(e) => setSelectedOrder((prev) => prev ? { ...prev, tableNumber: e.target.value } : prev)}
+                          className="mt-1"
+                        />
+                      ) : (
+                        <p className="mt-1 text-sm font-semibold text-[#D4AF37]">{selectedOrder.tableNumber}</p>
+                      )}
                     </div>
                   )}
                   <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
@@ -1134,50 +1262,102 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                    <Label className="text-xs text-muted-foreground">اسم العميل</Label>
+                    <Input
+                      value={selectedOrder.customerName}
+                      onChange={(e) => setSelectedOrder((prev) => prev ? { ...prev, customerName: e.target.value } : prev)}
+                      disabled={selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'CANCELLED'}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
+                    <Label className="text-xs text-muted-foreground">رقم الهاتف</Label>
+                    <Input
+                      value={selectedOrder.customerPhone}
+                      onChange={(e) => setSelectedOrder((prev) => prev ? { ...prev, customerPhone: e.target.value } : prev)}
+                      disabled={selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'CANCELLED'}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
                 {/* Items */}
                 <div>
                   <h4 className="text-sm font-semibold text-[#D4AF37] mb-2">الأصناف</h4>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {selectedOrder.items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center gap-3 rounded-lg border border-border/30 bg-muted/10 p-2.5"
-                      >
-                        {item.imageUrl ? (
-                          <img
-                            src={item.imageUrl}
-                            alt=""
-                            className="h-10 w-12 rounded-lg object-cover border border-[#D4AF37]/20 flex-shrink-0"
-                          />
-                        ) : (
-                          <div className="flex h-10 w-12 items-center justify-center rounded-lg bg-muted border border-border/30 flex-shrink-0">
-                            <UtensilsCrossed className="h-3 w-3 text-muted-foreground/40" />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate">{item.mealTitleAr || item.mealTitle}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.quantity} × {item.price.toFixed(2)} ج.م
-                          </p>
-                          {item.addOns && item.addOns.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {item.addOns.map((addon, idx) => (
-                                <Badge
-                                  key={idx}
-                                  variant="outline"
-                                  className="border-orange-500/20 text-orange-400 text-[9px] px-1.5 py-0"
+                      {(selectedOrder.status === 'PENDING' && editableOrderItems ? editableOrderItems : selectedOrder.items).map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-lg border border-border/30 bg-muted/10 p-2.5"
+                        >
+                          <div className="flex items-start gap-3">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt=""
+                                className="h-10 w-12 rounded-lg object-cover border border-[#D4AF37]/20 flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="flex h-10 w-12 items-center justify-center rounded-lg bg-muted border border-border/30 flex-shrink-0">
+                                <UtensilsCrossed className="h-3 w-3 text-muted-foreground/40" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0 space-y-2">
+                              {selectedOrder.status === 'PENDING' ? (
+                                <select
+                                  className="w-full rounded-lg border border-border/30 bg-background px-2 py-1 text-sm text-white"
+                                  value={item.mealId}
+                                  onChange={(e) => handleChangeOrderItemMeal(item.id, e.target.value)}
                                 >
-                                  {addon.titleAr || addon.title} (+{addon.price.toFixed(2)})
-                                </Badge>
-                              ))}
+                                  {meals.filter((meal) => meal.isActive).map((meal) => (
+                                    <option key={meal.id} value={meal.id}>
+                                      {meal.titleAr || meal.title} — {meal.price.toFixed(2)}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <p className="text-sm font-semibold truncate">{item.mealTitleAr || item.mealTitle}</p>
+                              )}
+
+                              {selectedOrder.status === 'PENDING' ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="flex items-center gap-1">
+                                    <Button size="sm" variant="secondary" onClick={() => handleEditItemQuantity(item.id, -1)}>-</Button>
+                                    <span className="text-sm font-semibold">{item.quantity}</span>
+                                    <Button size="sm" variant="secondary" onClick={() => handleEditItemQuantity(item.id, 1)}>+</Button>
+                                  </div>
+                                  <Button size="sm" variant="ghost" className="text-red-400" onClick={() => handleRemoveOrderItem(item.id)}>
+                                    حذف
+                                  </Button>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  {item.quantity} × {item.price.toFixed(2)} ج.م
+                                </p>
+                              )}
+
+                              {Array.isArray(item.addOns) && item.addOns.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {item.addOns.map((addon, idx) => (
+                                    <Badge
+                                      key={idx}
+                                      variant="outline"
+                                      className="border-orange-500/20 text-orange-400 text-[9px] px-1.5 py-0"
+                                    >
+                                      {addon.titleAr || addon.title} (+{addon.price.toFixed(2)})
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <span className="text-sm font-bold text-[#D4AF37] flex-shrink-0">
+                              {(item.price * item.quantity).toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-sm font-bold text-[#D4AF37] flex-shrink-0">
-                          {(item.price * item.quantity).toFixed(2)}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
 
@@ -1191,30 +1371,90 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
                 {/* Totals */}
                 <Separator className="bg-border/30" />
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>المجموع الفرعي</span>
-                    <span>{selectedOrder.subtotal.toFixed(2)} ج.م</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>خدمة</span>
-                    <span>{selectedOrder.serviceCharge.toFixed(2)} ج.م</span>
-                  </div>
-                  <Separator className="bg-border/30" />
-                  <div className="flex justify-between font-bold text-[#D4AF37] text-base">
-                    <span>الإجمالي</span>
-                    <span>{selectedOrder.total.toFixed(2)} ج.م</span>
-                  </div>
+                <div className="space-y-3 text-m">
+                  {selectedOrder.status === 'PENDING' && editableOrderItems ? (
+                    (() => {
+                      const currentItems = editableOrderItems
+                      const ratio = selectedOrder.subtotal > 0 ? selectedOrder.serviceCharge / selectedOrder.subtotal : SERVICE_CHARGE_RATE
+                      const computedSubtotal = currentItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+                      const computedService = Math.round(computedSubtotal * ratio * 100) / 100
+                      const computedTotal = computedSubtotal + computedService
+                      return (
+                        <>
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>المجموع الفرعي</span>
+                            <span>{computedSubtotal.toFixed(2)} ج.م</span>
+                          </div>
+                          <div className="flex justify-between text-muted-foreground">
+                            <span>خدمة</span>
+                            <span>{computedService.toFixed(2)} ج.م</span>
+                          </div>
+                          <Separator className="bg-border/30" />
+                          <div className="flex justify-between font-bold text-[#D4AF37] text-base ">
+                            <span>الإجمالي</span>
+                            <span>{computedTotal.toFixed(2)} ج.م</span>
+                          </div>
+                        </>
+                      )
+                    })()
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-muted-foreground mb-3 mt-3">
+                        <span>المجموع الفرعي</span>
+                        <span>{selectedOrder.subtotal.toFixed(2)} ج.م</span>
+                      </div>
+                      <div className="flex justify-between text-muted-foreground mb-3 mt-3">
+                        <span>خدمة</span>
+                        <span>{selectedOrder.serviceCharge.toFixed(2)} ج.م</span>
+                      </div>
+                      <Separator className="bg-border/30" />
+                      <div className="flex justify-between font-bold text-[#D4AF37] text-base mb-3 mt-3">
+                        <span>الإجمالي</span>
+                        <span>{selectedOrder.total.toFixed(2)} ج.م</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Action buttons */}
+                {selectedOrder.status !== 'DELIVERED' && selectedOrder.status !== 'CANCELLED' && (
+                  <Button
+                    onClick={handleSaveOrderEdits}
+                    disabled={savingOrderEdits}
+                    className="w-full bg-blue-600 text-white hover:bg-blue-500 gap-2 font-bold mb-3 mt-3"
+                  >
+                    {savingOrderEdits ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4" />
+                    )}
+                    حفظ التعديلات
+                  </Button>
+                )}
+                {selectedOrder.type === 'DINE_IN' && selectedOrder.status === 'READY' && (
+                  <Button
+                    onClick={() => {
+                      updateOrderStatus(selectedOrder.id, 'READY_TO_PAY')
+                      setSelectedOrder(null)
+                    }}
+                    disabled={updatingOrderId === selectedOrder.id}
+                    className="w-full bg-green-600 text-white hover:bg-green-500 gap-2 font-bold mb-3"
+                  >
+                    {updatingOrderId === selectedOrder.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4" />
+                    )}
+                    إغلاق الطاولة وإرسال للكاشير
+                  </Button>
+                )}
                 {selectedOrder.status === 'PENDING' && selectedOrder.type === 'DINE_IN' && (
                   <Button
                     onClick={() => {
                       updateOrderStatus(selectedOrder.id, 'CONFIRMED')
                       setSelectedOrder(null)
                     }}
-                    disabled={updatingOrderId === selectedOrder.id}
+                    disabled={updatingOrderId === selectedOrder.id || savingOrderEdits}
                     className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 gap-2 font-bold"
                   >
                     {updatingOrderId === selectedOrder.id ? (
@@ -1225,7 +1465,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
                     تأكيد الطلب
                   </Button>
                 )}
-              </div>
+              </ScrollArea>
             </>
           )}
         </DialogContent>

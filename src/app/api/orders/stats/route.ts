@@ -2,16 +2,32 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 
 // GET /api/orders/stats - Get order statistics for admin dashboard
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const totalOrders = await db.order.count()
+    const url = new URL(request.url)
+    const shiftId = url.searchParams.get('shiftId') || undefined
+    const baseWhere = shiftId ? { shiftId } : undefined
+
+    const totalOrders = await db.order.count({ where: baseWhere })
 
     const pendingOrders = await db.order.count({
-      where: { status: 'PENDING' },
+      where: shiftId ? { status: 'PENDING', shiftId } : { status: 'PENDING' },
     })
 
     const preparingOrders = await db.order.count({
-      where: { status: 'PREPARING' },
+      where: shiftId ? { status: 'PREPARING', shiftId } : { status: 'PREPARING' },
+    })
+
+    const readyOrders = await db.order.count({
+      where: shiftId ? { status: 'READY', shiftId } : { status: 'READY' },
+    })
+
+    const readyToPayOrders = await db.order.count({
+      where: shiftId ? { status: 'READY_TO_PAY', shiftId } : { status: 'READY_TO_PAY' },
+    })
+
+    const cancelledOrders = await db.order.count({
+      where: shiftId ? { status: 'CANCELLED', shiftId } : { status: 'CANCELLED' },
     })
 
     // Today's date range (start of day to end of day)
@@ -28,6 +44,7 @@ export async function GET() {
           lt: endOfDay,
         },
         status: { not: 'CANCELLED' },
+        ...(shiftId ? { shiftId } : {}),
       },
     })
 
@@ -38,6 +55,9 @@ export async function GET() {
       totalOrders,
       pendingOrders,
       preparingOrders,
+      readyOrders,
+      readyToPayOrders,
+      cancelledOrders,
       todayRevenue,
       todayOrders,
     })

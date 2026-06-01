@@ -73,8 +73,7 @@ export async function POST(
         rows.push(['(لا توجد مصاريف)', '', ''])
       }
 
-      // Clear cashier/day data: delete OrderItems first then Orders; and delete expenses of shift
-      // (Order->OrderItem is cascade, but deleting explicitly keeps the intent clear.)
+      // Clear cashier/day data: delete orders and expenses for this shift.
       const orderIds = orders.map((o) => o.id)
       if (orderIds.length > 0) {
         await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } })

@@ -22,8 +22,16 @@ interface OrderItem {
   mealTitleAr: string
   quantity: number
   price: number
+  category?: string
   addOns?: { title: string; titleAr: string; price: number }[]
   imageUrl?: string
+  addedQuantity?: number
+  createdAt: string
+  updatedAt: string
+}
+
+function isHallItem(item: OrderItem) {
+  return (item.category?.trim() || '') === 'اصناف الصالة'
 }
 
 interface Order {
@@ -148,8 +156,12 @@ function transformOrder(raw: Record<string, unknown>): Order {
         mealTitleAr: (item.mealTitleAr as string) || '',
         price: Number(item.price ?? 0),
         quantity: Number(item.quantity ?? 1),
+        category: ((item.category as string) || '').trim() || undefined,
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
+        addedQuantity: Number(item.lastAddedQuantity ?? 0),
+        createdAt: (item.createdAt as string) || new Date().toISOString(),
+        updatedAt: (item.updatedAt as string) || new Date().toISOString(),
       }
     }),
   }
@@ -182,6 +194,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   const [shiftLoading, setShiftLoading] = useState(true)
 
   const prevOrderCountRef = useRef(0)
+  const prevOrderUpdatedAtRef = useRef<Record<string, string>>({})
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -228,19 +241,45 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       )
 
-      // Detect new orders
-      if (allOrders.length > prevOrderCountRef.current && prevOrderCountRef.current > 0) {
+      const updatedOrders = allOrders.filter((order) =>
+        prevOrderUpdatedAtRef.current[order.id] &&
+        prevOrderUpdatedAtRef.current[order.id] !== order.updatedAt
+      )
+
+      // Filter out orders that contain only hall items
+      const visibleOrders = allOrders.filter((order) =>
+        order.items.some((item) => !isHallItem(item))
+      )
+
+      // Detect new confirmed orders
+      if (visibleOrders.length > prevOrderCountRef.current && prevOrderCountRef.current > 0) {
         setFlashActive(true)
         setTimeout(() => setFlashActive(false), 2000)
-        const newOrder = allOrders.find(o => o.status === 'CONFIRMED')
+        const newOrder = visibleOrders.find(o => o.status === 'CONFIRMED')
         if (newOrder) {
           playNotificationSound()
           toast({ title: 'طلب جديد!', description: `طلب رقم #${newOrder.orderNumber}` })
         }
       }
-      prevOrderCountRef.current = allOrders.length
 
-      setOrders(allOrders)
+      // Detect order updates, such as items added to existing kitchen orders
+      if (updatedOrders.length > 0) {
+        setFlashActive(true)
+        setTimeout(() => setFlashActive(false), 2000)
+        const count = updatedOrders.length
+        playNotificationSound()
+        toast({
+          title: 'تحديث في الطلبات',
+          description: count === 1
+            ? `تم إضافة عناصر جديدة في الطلب #${updatedOrders[0].orderNumber}`
+            : `تم تحديث ${count} طلبات في المطبخ`,
+        })
+      }
+
+      prevOrderCountRef.current = visibleOrders.length
+      prevOrderUpdatedAtRef.current = Object.fromEntries(visibleOrders.map((o) => [o.id, o.updatedAt]))
+
+      setOrders(visibleOrders)
     } catch {
       setError('فشل في تحميل الطلبات')
     } finally {
@@ -620,27 +659,47 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
                       {/* Items List - Large text for kitchen readability */}
                       <div className="space-y-1.5 mb-3">
-                        {order.items.map((item, idx) => (
-                          <div key={item.id || idx} className="flex items-start gap-2">
-                            <span className="flex-shrink-0 flex h-6 w-6 md:h-7 md:w-7 items-center justify-center rounded-md bg-[#D4AF37]/10 text-xs md:text-sm font-black text-[#D4AF37]">
-                              {item.quantity}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm md:text-base font-semibold leading-tight truncate">
-                                {item.mealTitleAr || item.mealTitle}
-                              </p>
-                              {item.addOns && item.addOns.length > 0 && (
-                                <div className="mt-0.5 flex flex-wrap gap-1">
-                                  {item.addOns.map((addon, aIdx) => (
-                                    <span key={aIdx} className="text-[10px] md:text-xs text-muted-foreground bg-muted/50 rounded px-1.5 py-0.5">
-                                      + {addon.titleAr || addon.title}
+                        {order.items.filter((item) => !isHallItem(item)).map((item, idx) => {
+                          const isNewItem = (item.addedQuantity ?? 0) > 0
+                          return (
+                            <div key={item.id || idx} className="flex items-start gap-2">
+                              <span className="flex-shrink-0 flex h-6 w-6 md:h-7 md:w-7 items-center justify-center rounded-md bg-[#D4AF37]/10 text-xs md:text-sm font-black text-[#D4AF37]">
+                                {item.quantity}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm md:text-base font-semibold leading-tight truncate">
+                                    {item.mealTitleAr || item.mealTitle}
+                                  </p>
+                                  {(item.addedQuantity ?? 0) > 0 && (
+                                    <span className="rounded-full bg-emerald-500/10 text-emerald-300 text-[10px] md:text-xs font-semibold px-2 py-0.5">
+                                      +{item.addedQuantity}
                                     </span>
-                                  ))}
+                                  )}
+                                  {isNewItem && (
+                                    <span className="rounded-full bg-green-500/10 text-green-400 text-[10px] md:text-xs font-semibold px-2 py-0.5">
+                                      جديد
+                                    </span>
+                                  )}
                                 </div>
-                              )}
+                                {item.addOns && item.addOns.length > 0 && (
+                                  <div className="mt-0.5 flex flex-wrap gap-1">
+                                    {item.addOns.map((addon, aIdx) => (
+                                      <span key={aIdx} className="text-[10px] md:text-xs text-muted-foreground bg-muted/50 rounded px-1.5 py-0.5">
+                                        {addon.titleAr || addon.title}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
+                          )
+                        })}
+                        {order.items.some((item) => isHallItem(item)) && (
+                          <div className="rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5 px-3 py-2 text-[11px] text-[#7c6d14]">
+                            توجد أصناف صالة مخفية في الطلب ولا تحتاج إلى عرض في المطبخ.
                           </div>
-                        ))}
+                        )}
                       </div>
 
                       {/* Notes - highlighted for kitchen attention */}
