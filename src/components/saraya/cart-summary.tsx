@@ -86,19 +86,46 @@ export function CartSummary() {
     setHasMounted(true)
   }, [])
 
+  const isValidEgyptianPhone = (phone: string) => {
+    const regex = /^01[0125][0-9]{8}$/
+    return regex.test(phone)
+  }
+
   const canProceedToConfirm = () => {
     if (!orderType) return false
     if (orderType === 'dine-in' && !tableNumber) return false
-    if (orderType === 'delivery' && (!deliveryAddress || !customerPhone)) return false
-    return true
+    if (orderType === 'takeaway') return isValidEgyptianPhone(customerPhone)
+    if (orderType === 'delivery') return deliveryAddress.length > 5 && isValidEgyptianPhone(customerPhone)
+    return orderType === 'dine-in'
   }
 
   const handleSubmitOrder = async () => {
-    if (items.length === 0 || !canProceedToConfirm()) return
+    if (items.length === 0) return
+
+    if (orderType !== 'dine-in' && !isValidEgyptianPhone(customerPhone)) {
+      toast.error('رقم الهاتف غير صالح', {
+        description: 'يرجى إدخال رقم هاتف مصري صحيح (11 رقماً يبدأ بـ 01).',
+      })
+      return
+    }
+
+    if (!canProceedToConfirm()) return
 
     setIsSubmitting(true)
 
     try {
+      // التحقق من حالة الشيفت قبل إرسال الطلب لضمان تواجد موظفين لاستلامه
+      const shiftCheckRes = await fetch('/api/shifts?current=true')
+      const currentShift = shiftCheckRes.ok ? await shiftCheckRes.json() : null
+
+      if (!currentShift) {
+        toast.error('المطعم غير متاح حالياً', {
+          description: 'نعتذر، لا يمكن استقبال طلبات في الوقت الحالي لعدم وجود شيفت عمل مفتوح.',
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       const isDineIn = orderType === 'dine-in'
       const finalTotal = isDineIn ? totalPriceWithService : subtotal
       const finalServiceCharge = isDineIn ? serviceCharge : 0
@@ -111,6 +138,7 @@ export function CartSummary() {
         tableNumber,
         pickupTime,
         notes,
+        shiftId: currentShift.id,
         items: items.map((item) => ({
           mealId: item.mealId,
           mealTitle: item.title,
@@ -123,6 +151,7 @@ export function CartSummary() {
         subtotal,
         serviceCharge: finalServiceCharge,
         total: finalTotal,
+        kitchenAccess: false, // يتم تفعيله بعد مراجعة الموظف المختص
       }
 
       const response = await fetch('/api/orders', {
@@ -484,6 +513,22 @@ export function CartSummary() {
                   </div>
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2 text-sm text-gray-300">
+                      <Phone className="h-4 w-4 text-[#D4AF37]" />
+                      رقم الهاتف *
+                    </Label>
+                    <Input
+                      type="tel"
+                      value={customerPhone}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 11);
+                        setCustomerPhone(val);
+                      }}
+                      placeholder="01xxxxxxxxx"
+                      className="border-white/10 bg-[#222] text-white focus:border-[#D4AF37]/50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2 text-sm text-gray-300">
                       <Clock className="h-4 w-4 text-[#D4AF37]" />
                       وقت الاستلام (اختياري)
                     </Label>
@@ -529,7 +574,10 @@ export function CartSummary() {
                     <Input
                       type="tel"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 11);
+                        setCustomerPhone(val);
+                      }}
                       placeholder="01xxxxxxxxx"
                       className="border-white/10 bg-[#222] text-white focus:border-[#D4AF37]/50"
                     />
@@ -628,6 +676,12 @@ export function CartSummary() {
                     <div className="flex items-center gap-2 text-sm text-gray-300">
                       <User className="h-4 w-4 text-[#D4AF37]" />
                       <span>الاسم: <strong className="text-white">{customerName}</strong></span>
+                    </div>
+                  )}
+                  {customerPhone && (
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Phone className="h-4 w-4 text-[#D4AF37]" />
+                      <span>الهاتف: <strong className="text-white" dir="ltr">{customerPhone}</strong></span>
                     </div>
                   )}
                   {pickupTime && (

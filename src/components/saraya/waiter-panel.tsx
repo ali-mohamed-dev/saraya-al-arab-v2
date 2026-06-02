@@ -166,6 +166,11 @@ function transformOrder(raw: Record<string, unknown>): Order {
   }
 }
 
+const isValidEgyptianPhone = (phone: string) => {
+  const regex = /^01[0125][0-9]{8}$/
+  return regex.test(phone)
+}
+
 // ── Cart Item for new order ───────────────────────────────────────────────────
 
 interface CartItem {
@@ -384,7 +389,11 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ 
+          status: newStatus,
+          // السماح للمطبخ برؤية الطلب عند التأكيد من قبل الويتر
+          kitchenAccess: ['CONFIRMED', 'PREPARING', 'READY'].includes(newStatus)
+        }),
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
@@ -456,6 +465,14 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
     }
     if (orderType === 'DINE_IN' && !tableNumber.trim()) {
       toast({ title: 'بيانات ناقصة', description: 'يرجى إدخال رقم الطاولة', variant: 'destructive' })
+      return
+    }
+    if ((orderType === 'TAKEAWAY' || orderType === 'DELIVERY') && !customerPhone.trim()) {
+      toast({ title: 'بيانات ناقصة', description: 'يرجى إدخال رقم هاتف العميل', variant: 'destructive' })
+      return
+    }
+    if (orderType !== 'DINE_IN' && !isValidEgyptianPhone(customerPhone)) {
+      toast({ title: 'رقم الهاتف غير صالح', description: 'يجب إدخال رقم هاتف مصري صحيح (11 رقماً).', variant: 'destructive' })
       return
     }
 
@@ -570,6 +587,12 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
     setSavingOrderEdits(true)
     try {
+      if (selectedOrder.type !== 'DINE_IN' && !isValidEgyptianPhone(selectedOrder.customerPhone)) {
+        toast({ title: 'رقم هاتف غير صالح', description: 'يرجى تصحيح رقم الهاتف قبل الحفظ', variant: 'destructive' })
+        setSavingOrderEdits(false)
+        return
+      }
+
 const requestBody: Record<string, unknown> = {
       customerName: selectedOrder.customerName,
       customerPhone: selectedOrder.customerPhone,
@@ -936,9 +959,11 @@ const requestBody: Record<string, unknown> = {
                     <div>
                       <Label className="text-xs text-muted-foreground">رقم الطاولة</Label>
                       <Input
+                        type="number"
                         value={tableNumber}
                         onChange={(e) => setTableNumber(e.target.value)}
                         placeholder="مثال: 5"
+                        min="1"
                         className="bg-muted border-border/50 h-9 mt-1"
                         dir="rtl"
                       />
@@ -963,8 +988,12 @@ const requestBody: Record<string, unknown> = {
                   <div>
                     <Label className="text-xs text-muted-foreground">رقم الهاتف</Label>
                     <Input
+                      type="tel"
                       value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 11);
+                        setCustomerPhone(val);
+                      }}
                       placeholder="اختياري"
                       className="bg-muted border-border/50 h-9 mt-1"
                       dir="rtl"
@@ -1245,7 +1274,9 @@ const requestBody: Record<string, unknown> = {
                       <p className="text-xs text-muted-foreground">رقم الطاولة</p>
                       {selectedOrder.status !== 'DELIVERED' && selectedOrder.status !== 'CANCELLED' ? (
                         <Input
+                          type="number"
                           value={selectedOrder.tableNumber ?? ''}
+                          min="1"
                           onChange={(e) => setSelectedOrder((prev) => prev ? { ...prev, tableNumber: e.target.value } : prev)}
                           className="mt-1"
                         />
@@ -1275,8 +1306,12 @@ const requestBody: Record<string, unknown> = {
                   <div className="rounded-lg border border-border/30 bg-muted/20 p-3">
                     <Label className="text-xs text-muted-foreground">رقم الهاتف</Label>
                     <Input
+                      type="tel"
                       value={selectedOrder.customerPhone}
-                      onChange={(e) => setSelectedOrder((prev) => prev ? { ...prev, customerPhone: e.target.value } : prev)}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 11);
+                        setSelectedOrder((prev) => prev ? { ...prev, customerPhone: val } : prev);
+                      }}
                       disabled={selectedOrder.status === 'DELIVERED' || selectedOrder.status === 'CANCELLED'}
                       className="mt-1"
                     />

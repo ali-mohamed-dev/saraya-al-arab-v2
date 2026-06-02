@@ -325,10 +325,10 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                     >
-                      {step.key === 'PENDING' && 'طلبك في انتظار المراجعة...'}
+                      {step.key === 'PENDING' && (order.type === 'DINE_IN' ? 'في انتظار مراجعة الويتر للطلب...' : 'في انتظار تأكيد خدمة العملاء لطلبك...')}
                       {step.key === 'CONFIRMED' && 'تم تأكيد طلبك وسيبدأ التحضير قريباً'}
                       {step.key === 'PREPARING' && 'المطبخ يحضر طلبك الآن'}
-                      {step.key === 'READY' && 'طلبك جاهز!'}
+                      {step.key === 'READY' && (order.type === 'DINE_IN' ? 'الطلب جاهز للتنزيل على الطاولة' : order.type === 'TAKEAWAY' ? 'طلبك جاهز للاستلام من المطعم' : 'طلبك في الطريق إليك الآن')}
                       {step.key === 'DELIVERED' && 'تم تسليم طلبك'}
                     </motion.p>
                   )}

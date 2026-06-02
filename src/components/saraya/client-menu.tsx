@@ -2,15 +2,21 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { UtensilsCrossed, Search, Loader2, Settings } from 'lucide-react'
+import { UtensilsCrossed, Search, Loader2, Settings, ClipboardList, Phone, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
+} from '@/components/ui/dialog'
 import { HeroCarousel } from '@/components/saraya/hero-carousel'
 import { MealCardSimple } from '@/components/saraya/meal-card-clickable'
 import { type Meal } from '@/components/saraya/meal-card'
 import { CartSummary } from '@/components/saraya/cart-summary'
 import { OrderDetail } from '@/components/saraya/order-detail'
+import { OrderTracking } from '@/components/saraya/order-tracking'
+import { toast } from 'sonner'
 
 interface ClientMenuProps {
   onAdminClick: () => void
@@ -33,6 +39,11 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null)
   const [orderDetailOpen, setOrderDetailOpen] = useState(false)
+  
+  // Tracking states
+  const [trackingOpen, setTrackingOpen] = useState(false)
+  const [trackingPhone, setTrackingPhone] = useState('')
+  const [trackedOrderId, setTrackedOrderId] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchMeals() {
@@ -82,6 +93,36 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
     setTimeout(() => setSelectedMeal(null), 300)
   }
 
+  const handleTrackOrder = async () => {
+    if (!trackingPhone || trackingPhone.length < 11) {
+      toast.error('يرجى إدخال رقم هاتف صحيح')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/orders?customerPhone=${trackingPhone}`)
+      if (res.ok) {
+        const orders = await res.json()
+        
+        const activeOrders = orders.filter((o: any) => !['DELIVERED', 'CANCELLED'].includes(o.status))
+
+        if (activeOrders.length > 0) {
+          const latestOrder = activeOrders.sort((a: any, b: any) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )[0]
+          setTrackedOrderId(latestOrder.id)
+        } else {
+          toast.error('لا توجد طلبات نشطة حالياً مرتبطة بهذا الرقم')
+        }
+      } else {
+        toast.error('حدث خطأ أثناء البحث عن الطلب')
+      }
+    } catch (error) {
+      console.error('Tracking error:', error)
+      toast.error('فشل الاتصال بالخادم')
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -96,14 +137,25 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
               <p className="text-xs text-muted-foreground">Saraya Al-Arab</p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onAdminClick}
-            className="text-muted-foreground hover:text-[#D4AF37]"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTrackingOpen(true)}
+              className="flex items-center gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
+            >
+              <ClipboardList className="h-4 w-4" />
+              <span className="hidden xs:inline">تتبع طلبي</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onAdminClick}
+              className="text-muted-foreground hover:text-[#D4AF37]"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -211,6 +263,61 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
         open={orderDetailOpen}
         onClose={handleCloseDetail}
       />
+
+      {/* Track Order Dialog */}
+      <Dialog open={trackingOpen} onOpenChange={(o) => {
+        setTrackingOpen(o)
+        if (!o) {
+          setTrackedOrderId(null)
+          setTrackingPhone('')
+        }
+      }}>
+        <DialogContent className="max-w-md bg-[#1A1A1A] border-[#D4AF37]/20 text-white" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-[#D4AF37] flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              تتبع حالة طلبك
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              أدخل رقم الهاتف الذي استخدمته عند إرسال الطلب لمتابعة حالته.
+            </DialogDescription>
+          </DialogHeader>
+
+          {!trackedOrderId ? (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm">رقم الهاتف</Label>
+                <div className="relative">
+                  <Phone className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#D4AF37]" />
+                  <Input
+                    type="tel"
+                    value={trackingPhone}
+                    onChange={(e) => setTrackingPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    placeholder="01xxxxxxxxx"
+                    className="bg-[#222] border-white/10 pr-10 text-center text-lg tracking-widest"
+                  />
+                </div>
+              </div>
+              <Button 
+                onClick={handleTrackOrder}
+                className="w-full bg-[#D4AF37] text-black font-bold hover:bg-[#c9a430]"
+              >
+                ابحث عن طلبي
+              </Button>
+            </div>
+          ) : (
+            <div className="max-h-[70vh] overflow-y-auto">
+              <OrderTracking 
+                orderId={trackedOrderId} 
+                onBackToMenu={() => {
+                  setTrackedOrderId(null)
+                  setTrackingOpen(false)
+                }} 
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Floating Cart */}
       <CartSummary />

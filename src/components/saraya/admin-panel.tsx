@@ -88,6 +88,7 @@ interface Order {
   subtotal: number
   serviceCharge: number
   total: number
+  kitchenAccess: boolean
   notes?: string
   cancelledBy?: string
   createdAt: string
@@ -187,6 +188,7 @@ function transformOrder(raw: Record<string, unknown>): Order {
     subtotal: Number(raw.subtotal ?? 0),
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
+    kitchenAccess: (raw.kitchenAccess as boolean) ?? false,
     notes: (raw.notes as string) || undefined,
     cancelledBy: (raw.cancelledBy as string) || undefined,
     createdAt: (raw.createdAt as string) || new Date().toISOString(),
@@ -593,7 +595,11 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const payload: Record<string, unknown> = { status: newStatus }
+      const payload: Record<string, unknown> = { 
+        status: newStatus,
+        // تلقائياً اسمح للمطبخ برؤية الطلب عند التأكيد أو البدء في التحضير
+        kitchenAccess: ['CONFIRMED', 'PREPARING', 'READY'].includes(newStatus)
+      }
       if (newStatus === 'CANCELLED') {
         payload.cancelledBy = adminUsername
       }
@@ -622,11 +628,12 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const fetchKitchenOrders = useCallback(async () => {
     try {
       setLoadingKitchen(true)
-      const res = await fetch('/api/orders?status=PREPARING')
-      const preparing = res.ok ? (await res.json()).map(transformOrder) : []
+      // جلب طلبات المطبخ التي لديها kitchenAccess مفعل فقط
+      const res = await fetch('/api/orders?status=PREPARING&kitchenAccess=true')
+      const preparing = res.ok ? (await res.json()).map(transformOrder).filter((o: Order) => o.kitchenAccess) : []
       try {
-        const res2 = await fetch('/api/orders?status=PENDING')
-        const pending = res2.ok ? (await res.json()).map(transformOrder) : []
+        const res2 = await fetch('/api/orders?status=PENDING&kitchenAccess=true')
+        const pending = res2.ok ? (await res2.json()).map(transformOrder).filter((o: Order) => o.kitchenAccess) : []
         setKitchenOrders([...pending, ...preparing])
       } catch { setKitchenOrders(preparing) }
     } catch { /* ignore */ } finally { setLoadingKitchen(false) }

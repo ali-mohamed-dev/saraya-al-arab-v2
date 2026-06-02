@@ -351,7 +351,10 @@ const fetchOrders = useCallback(async (showLoading = false) => {
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CONFIRMED' }),
+        body: JSON.stringify({ 
+          status: 'CONFIRMED',
+          kitchenAccess: true // الكاشير يؤكد طلبات التيكاوي والدليفري للمطبخ
+        }),
       })
       if (res.ok) {
         toast({ title: 'تم تأكيد الطلب', description: 'تم إرسال الطلب إلى المطبخ' })
