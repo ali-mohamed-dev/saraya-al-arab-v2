@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   ShoppingCart, Minus, Plus, Trash2, Send,
   UtensilsCrossed, ShoppingBag, Truck, MapPin,
-  Phone, User, Clock, CheckCircle, Loader2,
+  Phone, User, Clock, CheckCircle, Loader2, ClipboardList,
   ArrowRight, ArrowLeft, ChefHat, Receipt
 } from 'lucide-react'
 import {
@@ -125,6 +125,7 @@ export function CartSummary() {
         setIsSubmitting(false)
         return
       }
+      const activeOrderId = localStorage.getItem('saraya-active-order-id')
 
       const isDineIn = orderType === 'dine-in'
       const finalTotal = isDineIn ? totalPriceWithService : subtotal
@@ -154,11 +155,37 @@ export function CartSummary() {
         kitchenAccess: false, // يتم تفعيله بعد مراجعة الموظف المختص
       }
 
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderPayload),
-      })
+      let response;
+      let isUpdate = false;
+
+      // محاولة دمج الطلب إذا كان هناك طلب نشط من قبل
+      if (activeOrderId) {
+        const checkRes = await fetch(`/api/orders/${activeOrderId}`);
+        if (checkRes.ok) {
+          const existingOrder = await checkRes.json();
+          // ندمج فقط إذا كان الطلب لم يجهز بعد ولم يُلغَ
+          if (['PENDING', 'CONFIRMED', 'PREPARING'].includes(existingOrder.status)) {
+            response = await fetch(`/api/orders/${activeOrderId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                shiftId: currentShift.id,
+                itemsToAdd: orderPayload.items,
+                notes: notes ? `(إضافة): ${notes}` : undefined
+              }),
+            });
+            isUpdate = true;
+          }
+        }
+      }
+
+      if (!response) {
+        response = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload),
+        });
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -174,11 +201,18 @@ export function CartSummary() {
       setOrderId(orderData.id)
       setStep('success')
 
+      // حفظ معرف الطلب في المتصفح لتسهيل التتبع لاحقاً بدون رقم هاتف
+      localStorage.setItem('saraya-active-order-id', orderData.id)
+      // حفظ رقم الهاتف ليسهل عليه التتبع لاحقاً إذا مسح الـ cache
+      if (customerPhone) localStorage.setItem('saraya-customer-phone', customerPhone)
+
       // Clear cart and reset after showing success
       clearCart()
 
-      toast.success('تم إرسال طلبك بنجاح!', {
-        description: `رقم الطلب: #${orderData.orderNumber}`,
+      toast.success(isUpdate ? 'تمت إضافة الأصناف لطلبك الحالي' : 'تم إرسال طلبك بنجاح!', {
+        description: isUpdate 
+          ? `تم تحديث الطلب رقم #${orderData.orderNumber} بنجاح.`
+          : `رقم الطلب الجديد: #${orderData.orderNumber}`,
       })
     } catch (error) {
       console.error('Order submission error:', error)
@@ -889,6 +923,19 @@ export function CartSummary() {
               transition={{ delay: 0.7 }}
               className="w-full space-y-2"
             >
+              <Button
+                variant="outline"
+                className="w-full gap-2 py-5 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
+                onClick={() => {
+                  setOpen(false)
+                  // محاكاة الضغط على زر التتبع في الصفحة الرئيسية
+                  const trackBtn = document.querySelector('[data-track-button]') as HTMLButtonElement
+                  if (trackBtn) trackBtn.click()
+                }}
+              >
+                <ClipboardList className="h-4 w-4" />
+                تتبع حالة الطلب الآن
+              </Button>
               <Button
                 className="w-full gap-2 py-5 text-base font-bold text-black hover:bg-[#c9a430]"
                 style={{ backgroundColor: '#D4AF37' }}

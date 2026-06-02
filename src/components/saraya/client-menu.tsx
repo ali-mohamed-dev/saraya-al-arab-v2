@@ -45,6 +45,21 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
   const [trackingPhone, setTrackingPhone] = useState('')
   const [trackedOrderId, setTrackedOrderId] = useState<string | null>(null)
 
+  // تحميل رقم الهاتف المحفوظ إن وجد
+  useEffect(() => {
+    const savedPhone = localStorage.getItem('saraya-customer-phone')
+    if (savedPhone) setTrackingPhone(savedPhone)
+  }, [])
+
+  // التحقق من وجود طلب نشط محفوظ في المتصفح عند التحميل
+  useEffect(() => {
+    const savedId = localStorage.getItem('saraya-active-order-id')
+    if (savedId && !trackedOrderId) {
+      // نحن لا نفتحه تلقائياً لكي لا نزعج العميل، لكن نجهزه للزر
+      console.log('Active order found in storage:', savedId)
+    }
+  }, [trackedOrderId])
+
   useEffect(() => {
     async function fetchMeals() {
       try {
@@ -91,6 +106,19 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
   const handleCloseDetail = () => {
     setOrderDetailOpen(false)
     setTimeout(() => setSelectedMeal(null), 300)
+  }
+
+  const handleOpenTracking = () => {
+    const savedId = localStorage.getItem('saraya-active-order-id')
+    if (savedId) {
+      // إذا كان هناك طلب محفوظ، نفتحه مباشرة
+      setTrackedOrderId(savedId)
+      setTrackingOpen(true)
+    } else {
+      // إذا لم يوجد، نفتح نافذة البحث برقم الهاتف
+      setTrackedOrderId(null)
+      setTrackingOpen(true)
+    }
   }
 
   const handleTrackOrder = async () => {
@@ -141,11 +169,12 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setTrackingOpen(true)}
+              onClick={handleOpenTracking}
+              data-track-button
               className="flex items-center gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
             >
               <ClipboardList className="h-4 w-4" />
-              <span className="hidden xs:inline">تتبع طلبي</span>
+              <span className="hidden sm:inline">تتبع طلبي</span>
             </Button>
             <Button
               variant="ghost"
@@ -272,7 +301,7 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
           setTrackingPhone('')
         }
       }}>
-        <DialogContent className="max-w-md bg-[#1A1A1A] border-[#D4AF37]/20 text-white" dir="rtl">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md bg-[#1A1A1A] border-[#D4AF37]/20 text-white rounded-2xl" dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-[#D4AF37] flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
@@ -312,6 +341,7 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
                 onBackToMenu={() => {
                   setTrackedOrderId(null)
                   setTrackingOpen(false)
+                  // ملاحظة: لا نمسح الـ storage هنا لربما أراد العميل العودة للتتبع
                 }} 
               />
             </div>

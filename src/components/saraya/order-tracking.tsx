@@ -114,6 +114,11 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
       const data = await response.json()
       setOrder(data)
       setError(null)
+
+      // إذا انتهى الطلب، نمسحه من الذاكرة المحلية للمتصفح
+      if (['DELIVERED', 'CANCELLED'].includes(data.status)) {
+        localStorage.removeItem('saraya-active-order-id')
+      }
     } catch (err) {
       console.error('Error fetching order:', err)
       setError(err instanceof Error ? err.message : 'حدث خطأ غير متوقع')
