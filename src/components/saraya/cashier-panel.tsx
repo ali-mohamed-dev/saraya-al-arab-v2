@@ -32,6 +32,7 @@ interface OrderItem {
   mealTitleAr: string
   quantity: number
   price: number
+  preparationArea?: string
   addOns?: { title: string; titleAr: string; price: number }[]
   imageUrl?: string
 }
@@ -46,6 +47,8 @@ interface Order {
   deliveryAddress?: string
   tableNumber?: string
   items: OrderItem[]
+  kitchenStatus: string
+  baristaStatus: string
   subtotal: number
   serviceCharge: number
   total: number
@@ -121,6 +124,8 @@ function transformOrder(raw: Record<string, unknown>): Order {
     customerPhone: (raw.customerPhone as string) || '',
     deliveryAddress: (raw.deliveryAddress as string) || undefined,
     tableNumber: (raw.tableNumber as string) || undefined,
+    kitchenStatus: (raw.kitchenStatus as string) || 'PENDING',
+    baristaStatus: (raw.baristaStatus as string) || 'PENDING',
     subtotal: Number(raw.subtotal ?? 0),
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
@@ -141,6 +146,7 @@ function transformOrder(raw: Record<string, unknown>): Order {
         mealTitleAr: (item.mealTitleAr as string) || '',
         price: Number(item.price ?? 0),
         quantity: Number(item.quantity ?? 1),
+        preparationArea: (item.preparationArea as string) || undefined,
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
       }
@@ -326,7 +332,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
   const markAsPaid = async (orderId: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'DELIVERED' }),
@@ -348,7 +354,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
   const confirmOrder = async (orderId: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -375,7 +381,7 @@ const fetchOrders = useCallback(async (showLoading = false) => {
     setPayingTable(orders[0]?.tableNumber || orderIds[0])
     try {
       const results = await Promise.all(orderIds.map((orderId) =>
-        fetch(`/api/orders/${orderId}/status`, {
+        fetch(`/api/orders/${orderId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'DELIVERED' }),
@@ -773,6 +779,31 @@ const fetchOrders = useCallback(async (showLoading = false) => {
                 </Badge>
               )}
             </div>
+
+            {/* مؤشرات التقدم المستقلة لكل قسم */}
+            <div className="flex flex-wrap gap-2 mb-2">
+              {order.items.some(i => i.preparationArea === 'KITCHEN') && (
+                <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+                  order.kitchenStatus === 'READY' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                  order.kitchenStatus === 'CANCELLED' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                  order.kitchenStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
+                  'bg-muted text-muted-foreground'
+                }`}>
+                  المطبخ: {ORDER_STATUS_MAP[order.kitchenStatus]?.label || order.kitchenStatus}
+                </Badge>
+              )}
+              {order.items.some(i => i.preparationArea === 'BARISTA') && (
+                <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+                  order.baristaStatus === 'READY' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                  order.baristaStatus === 'CANCELLED' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                  order.baristaStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
+                  'bg-muted text-muted-foreground'
+                }`}>
+                  الباريستا: {ORDER_STATUS_MAP[order.baristaStatus]?.label || order.baristaStatus}
+                </Badge>
+              )}
+            </div>
+
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span>{order.customerName}</span>
               {order.customerPhone && <span className="flex items-center gap-1" dir="ltr"><Phone className="h-3 w-3" />{order.customerPhone}</span>}

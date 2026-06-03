@@ -8,12 +8,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const type = searchParams.get('type')
-
+    const kitchenAccess = searchParams.get('kitchenAccess')
     const shiftId = searchParams.get('shiftId')
-    const where: Record<string, string> = {}
-        if (status) where.status = status
-        if (type) where.type = type
-        if (shiftId) where.shiftId = shiftId
+
+    const where: any = {}
+    if (status) where.status = status
+    if (type) where.type = type
+    if (shiftId) where.shiftId = shiftId
+    if (kitchenAccess !== null) where.kitchenAccess = kitchenAccess === 'true'
+
     const orders = await db.order.findMany({
       where,
       include: { items: true },
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
       quantity: number
       addOns: string
       category: string
+      preparationArea: string
       imageUrl: string
     }
 
@@ -91,6 +95,7 @@ export async function POST(request: NextRequest) {
       price: number
       quantity: number
       addOns: string
+      preparationArea: string
       category: string
       imageUrl: string
       lastAddedQuantity: number
@@ -103,6 +108,7 @@ export async function POST(request: NextRequest) {
       price: parseFloat(String(item.price)) || 0,
       quantity: parseInt(String(item.quantity)) || 1,
       addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+      preparationArea: item.preparationArea || 'KITCHEN',
       category: (item.category || '').trim(),
       imageUrl: item.imageUrl || '',
     }))
@@ -141,6 +147,7 @@ export async function POST(request: NextRequest) {
           quantity: item.quantity,
           addOns: item.addOns,
           category: item.category,
+          preparationArea: item.preparationArea,
           imageUrl: item.imageUrl,
           lastAddedQuantity: item.quantity,
         })
@@ -152,6 +159,11 @@ export async function POST(request: NextRequest) {
       await db.orderItem.createMany({ data: createData })
     }
 
+    // فحص هل الأصناف المضافة تحتاج تحضير أم هي أصناف صالة فقط (مثل المية)
+    const hasNewKitchenItems = normalizedIncomingItems.some(i => i.preparationArea === 'KITCHEN')
+    const hasNewBaristaItems = normalizedIncomingItems.some(i => i.preparationArea === 'BARISTA')
+    const needsNewPreparation = hasNewKitchenItems || hasNewBaristaItems
+
     const updatedOrder = await db.order.update({
       where: { id: existingOrder.id },
       data: {
@@ -159,7 +171,13 @@ export async function POST(request: NextRequest) {
         serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
         total: existingOrder.total + parseFloat(total),
         notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
-        status: existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY' ? 'PREPARING' : existingOrder.status,
+        // نغير الحالة لـ PREPARING فقط لو فيه أصناف مطبخ أو باريستا جديدة
+        status: needsNewPreparation && (existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY') 
+          ? 'PREPARING' 
+          : existingOrder.status,
+        // نصفر حالة القسم المحتاج تحضير فقط، ونحافظ على حالة القسم التاني زي ما هي
+        kitchenStatus: hasNewKitchenItems ? 'PENDING' : existingOrder.kitchenStatus,
+        baristaStatus: hasNewBaristaItems ? 'PENDING' : existingOrder.baristaStatus,
       },
       include: { items: true },
     })
@@ -191,6 +209,9 @@ export async function POST(request: NextRequest) {
         serviceCharge: parseFloat(serviceCharge) || 0,
         total: parseFloat(total) || 0,
         status: 'PENDING',
+        kitchenStatus: 'PENDING',
+        baristaStatus: 'PENDING',
+        kitchenAccess: false,
         items: {
           create: items.map(
             (item: {
@@ -201,6 +222,7 @@ export async function POST(request: NextRequest) {
               quantity: number
               addOns: unknown
               category?: string
+              preparationArea?: string
               imageUrl?: string
             }) => ({
               mealId: item.mealId,
@@ -210,6 +232,7 @@ export async function POST(request: NextRequest) {
               quantity: parseInt(String(item.quantity)),
               addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
               category: item.category || '',
+              preparationArea: item.preparationArea || 'KITCHEN',
               imageUrl: item.imageUrl || '',
             })
           ),

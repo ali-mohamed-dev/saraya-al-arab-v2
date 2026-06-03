@@ -20,7 +20,7 @@ export interface CartItemType {
 
 interface CartStore {
   items: CartItemType[]
-  addItem: (item: Omit<CartItemType, 'quantity'>) => void
+  addItem: (item: Omit<CartItemType, 'quantity'> & { quantity?: number }) => void
   removeItem: (mealId: string, addOnKey: string) => void
   updateQuantity: (mealId: string, addOnKey: string, quantity: number) => void
   clearCart: () => void
@@ -44,6 +44,7 @@ export const useCartStore = create<CartStore>()(
       addItem: (item) =>
         set((state) => {
           const addOnKey = getAddOnKey(item.addOns)
+          const quantityToAdd = item.quantity ?? 1
           const existing = state.items.find(
             (i) => i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
           )
@@ -51,12 +52,12 @@ export const useCartStore = create<CartStore>()(
             return {
               items: state.items.map((i) =>
                 i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
-                  ? { ...i, quantity: i.quantity + 1 }
+                  ? { ...i, quantity: i.quantity + quantityToAdd }
                   : i
               ),
             }
           }
-          return { items: [...state.items, { ...item, quantity: 1 }] }
+          return { items: [...state.items, { ...item, quantity: quantityToAdd }] }
         }),
       removeItem: (mealId, addOnKey) =>
         set((state) => ({

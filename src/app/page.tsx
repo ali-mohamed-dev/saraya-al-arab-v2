@@ -7,10 +7,11 @@ import { AdminPanel } from '@/components/saraya/admin-panel'
 import { WaiterPanel } from '@/components/saraya/waiter-panel'
 import { CashierPanel } from '@/components/saraya/cashier-panel'
 import { KitchenPanel } from '@/components/saraya/kitchen-panel'
+import { BaristaPanel } from '@/components/saraya/barista-panel'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 
-type View = 'menu' | 'staff-login' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel'
+type View = 'menu' | 'staff-login' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel' | 'barista-panel'
 
 // Error boundary wrapper to prevent full-page crashes
 function withErrorBoundary<P extends object>(Component: ComponentType<P>, fallbackView: string, onViewChange: (view: string) => void) {
@@ -60,6 +61,7 @@ function getViewForRole(role: string): View {
     case 'WAITER': return 'waiter-panel'
     case 'CASHIER': return 'cashier-panel'
     case 'KITCHEN': return 'kitchen-panel'
+    case 'BARISTA': return 'barista-panel'
     default: return 'admin-panel'
   }
 }
@@ -119,6 +121,8 @@ export default function Home() {
       return <CashierPanel onLogout={handleLogout} />
     case 'kitchen-panel':
       return <KitchenPanel onLogout={handleLogout} />
+    case 'barista-panel':
+      return <BaristaPanel onLogout={handleLogout} />
     default:
       return <ClientMenu onAdminClick={handleAdminClick} />
   }

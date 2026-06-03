@@ -18,7 +18,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, titleAr, description, descriptionAr, price, prepTime, category, categoryAr, imageUrl } = body
+    const { title, titleAr, description, descriptionAr, price, prepTime, category, categoryAr, preparationArea, imageUrl } = body
 
     if (!title || price === undefined) {
       return NextResponse.json({ error: 'Title and price are required' }, { status: 400 })
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         price: parseFloat(price),
         prepTime: prepTime || '15 دقيقة',
         category: category || 'مشويات',
+        preparationArea: preparationArea || 'KITCHEN',
         categoryAr: categoryAr || '',
         imageUrl: imageUrl || '',
       },

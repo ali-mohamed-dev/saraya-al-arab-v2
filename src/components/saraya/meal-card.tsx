@@ -16,6 +16,7 @@ export interface Meal {
   prepTime: string
   category: string
   categoryAr: string
+  preparationArea: 'KITCHEN' | 'BARISTA' | 'HALL'
   imageUrl: string
   isActive: boolean
 }
@@ -34,8 +35,10 @@ export function MealCard({ meal }: MealCardProps) {
       titleAr: meal.titleAr,
       price: meal.price,
       imageUrl: meal.imageUrl,
+      category: meal.category,
+      preparationArea: meal.preparationArea,
       addOns: [],
-    })
+    } as any)
   }
 
   return (

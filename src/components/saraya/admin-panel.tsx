@@ -5,10 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   UtensilsCrossed, Plus, Megaphone, LogOut,
   Trash2, Edit3, RefreshCw, Check, X, Loader2, Star, Package, Search,
-  Clock, ChefHat, CheckCircle, DollarSign, ClipboardList,
-  AlertTriangle, Maximize, Minimize, Flame, Utensils, Phone, MapPin, Timer,
-  Users, Shield, TrendingDown, Download, PlayCircle, StopCircle, UserPlus, KeyRound,
-  BadgeCheck
+  Clock, CheckCircle, DollarSign, ClipboardList,
+  AlertTriangle, Flame, Utensils, Phone, MapPin,
+  Users, Shield, Download, PlayCircle, StopCircle, UserPlus, KeyRound,
+  BadgeCheck, Coffee
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -41,6 +41,7 @@ interface Meal {
   prepTime: string
   category: string
   categoryAr: string
+  preparationArea: 'KITCHEN' | 'BARISTA' | 'HALL'
   imageUrl: string
   isActive: boolean
 }
@@ -71,6 +72,7 @@ interface OrderItem {
   mealTitleAr: string
   quantity: number
   price: number
+  preparationArea?: string
   addOns?: { title: string; titleAr: string; price: number }[]
   imageUrl?: string
 }
@@ -89,6 +91,8 @@ interface Order {
   serviceCharge: number
   total: number
   kitchenAccess: boolean
+  kitchenStatus: string
+  baristaStatus: string
   notes?: string
   cancelledBy?: string
   createdAt: string
@@ -115,7 +119,12 @@ const CATEGORIES = [
   { value: 'حلويات', label: 'حلويات / Desserts' },
   { value: 'مشروبات', label: 'مشروبات / Beverages' },
   { value: 'أطباق رئيسية', label: 'أطباق رئيسية / Main Courses' },
-  { value: 'اصناف الصالة', label: 'اصناف الصالة / Hall Items' },
+]
+
+const PREP_AREAS = [
+  { value: 'KITCHEN', label: 'المطبخ', color: 'text-orange-400' },
+  { value: 'BARISTA', label: 'الباريستا', color: 'text-blue-400' },
+  { value: 'HALL', label: 'الصالة (مباشر)', color: 'text-green-400' },
 ]
 
 const ORDER_STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -189,6 +198,8 @@ function transformOrder(raw: Record<string, unknown>): Order {
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
     kitchenAccess: (raw.kitchenAccess as boolean) ?? false,
+    kitchenStatus: (raw.kitchenStatus as string) || 'PENDING',
+    baristaStatus: (raw.baristaStatus as string) || 'PENDING',
     notes: (raw.notes as string) || undefined,
     cancelledBy: (raw.cancelledBy as string) || undefined,
     createdAt: (raw.createdAt as string) || new Date().toISOString(),
@@ -209,6 +220,7 @@ function transformOrder(raw: Record<string, unknown>): Order {
         mealTitleAr: (item.mealTitleAr as string) || '',
         price: Number(item.price ?? 0),
         quantity: Number(item.quantity ?? 1),
+        preparationArea: (item.preparationArea as string) || 'KITCHEN',
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
       }
@@ -235,6 +247,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [editingMeal, setEditingMeal] = useState<Meal | null>(null)
   const [editPrice, setEditPrice] = useState('')
   const [editImageUrl, setEditImageUrl] = useState('')
+  const [editPrepArea, setEditPrepArea] = useState<Meal['preparationArea']>('KITCHEN')
   const [savingId, setSavingId] = useState<string | null>(null)
 
   // Add-ons management
@@ -254,7 +267,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   // New meal form
   const [newMeal, setNewMeal] = useState({
     title: '', titleAr: '', description: '', descriptionAr: '',
-    price: '', prepTime: '15 دقيقة', category: 'مشويات', imageUrl: ''
+    price: '', prepTime: '15 دقيقة', category: 'مشويات', preparationArea: 'KITCHEN' as Meal['preparationArea'], imageUrl: ''
   })
   const [creating, setCreating] = useState(false)
 
@@ -274,12 +287,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
 
-  // ── Kitchen state ─────────────────────────────────────────────────────────
-  const [kitchenOrders, setKitchenOrders] = useState<Order[]>([])
-  const [loadingKitchen, setLoadingKitchen] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [kitchenFlash, setKitchenFlash] = useState(false)
-  const kitchenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // ── Relative timers ──────────────────────────────────────────────────
   const [relativeTimers, setRelativeTimers] = useState<Record<string, string>>({})
 
   // ── Fetch meals ───────────────────────────────────────────────────────────
@@ -325,6 +333,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       const updateData: Record<string, unknown> = {}
       if (editPrice) updateData.price = parseFloat(editPrice)
       if (editImageUrl !== undefined) updateData.imageUrl = editImageUrl
+      updateData.preparationArea = editPrepArea
       const res = await fetch(`/api/meals/${editingMeal.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updateData),
       })
@@ -348,7 +357,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
 
   const handleCreateMeal = async () => {
     const effectiveTitle = newMeal.title || newMeal.titleAr
-    if (!effectiveTitle || !newMeal.price) {
+    if (!effectiveTitle || !newMeal.price || !newMeal.preparationArea) {
       toast({ title: 'بيانات ناقصة', description: 'يرجى إدخال اسم الطبق والسعر', variant: 'destructive' })
       return
     }
@@ -360,7 +369,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
       })
       if (res.ok) {
         toast({ title: 'تم الإضافة', description: 'تم إضافة الطبق الجديد بنجاح' })
-        setNewMeal({ title: '', titleAr: '', description: '', descriptionAr: '', price: '', prepTime: '15 دقيقة', category: 'مشويات', imageUrl: '' })
+        setNewMeal({ title: '', titleAr: '', description: '', descriptionAr: '', price: '', prepTime: '15 دقيقة', category: 'مشويات', preparationArea: 'KITCHEN', imageUrl: '' })
         fetchMeals()
       }
     } catch { toast({ title: 'خطأ', description: 'فشل في إضافة الطبق', variant: 'destructive' }) }
@@ -490,6 +499,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
     setEditingMeal(meal)
     setEditPrice(meal.price.toString())
     setEditImageUrl(meal.imageUrl)
+    setEditPrepArea(meal.preparationArea || 'KITCHEN')
   }
 
   // ── Orders fetch & update ─────────────────────────────────────────────────
@@ -595,16 +605,36 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const payload: Record<string, unknown> = { 
-        status: newStatus,
-        // تلقائياً اسمح للمطبخ برؤية الطلب عند التأكيد أو البدء في التحضير
-        kitchenAccess: ['CONFIRMED', 'PREPARING', 'READY'].includes(newStatus)
+      const order = orders.find(o => o.id === orderId)
+      const payload: Record<string, unknown> = { status: newStatus }
+      
+      // عند التحديث من الأدمن، نقوم بتحديث الحالات الفرعية أيضاً لضمان المزامنة
+      if (newStatus === 'CONFIRMED') {
+        payload.kitchenStatus = 'CONFIRMED'
+        payload.baristaStatus = 'CONFIRMED'
+        payload.kitchenAccess = true
+      }
+      if (newStatus === 'PREPARING') {
+        // نحدث الحالة الفرعية فقط إذا لم تكن قد بدأت بالفعل
+        // هذا يحافظ على الاستقلالية - إذا المطبخ بدأ والباريستا لسه جديد، لا نغير الباريستا
+        if (order?.kitchenStatus === 'PENDING' || order?.kitchenStatus === 'CONFIRMED') {
+          payload.kitchenStatus = 'PREPARING'
+        }
+        if (order?.baristaStatus === 'PENDING' || order?.baristaStatus === 'CONFIRMED') {
+          payload.baristaStatus = 'PREPARING'
+        }
+      }
+      if (newStatus === 'READY') {
+        payload.kitchenStatus = 'READY'
+        payload.baristaStatus = 'READY'
       }
       if (newStatus === 'CANCELLED') {
         payload.cancelledBy = adminUsername
+        payload.kitchenStatus = 'CANCELLED'
+        payload.baristaStatus = 'CANCELLED'
       }
 
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -614,7 +644,6 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
         await fetchOrders()
         await fetchCancelledOrders()
         await fetchStats(currentShiftId ?? undefined)
-        await fetchKitchenOrders()
       } else {
         const data = await res.json().catch(() => ({}))
         toast({ title: 'خطأ', description: data.error || 'فشل في تحديث الحالة', variant: 'destructive' })
@@ -624,43 +653,19 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
     } finally { setUpdatingOrderId(null) }
   }
 
-  // ── Kitchen fetch ─────────────────────────────────────────────────────────
-  const fetchKitchenOrders = useCallback(async () => {
-    try {
-      setLoadingKitchen(true)
-      // جلب طلبات المطبخ التي لديها kitchenAccess مفعل فقط
-      const res = await fetch('/api/orders?status=PREPARING&kitchenAccess=true')
-      const preparing = res.ok ? (await res.json()).map(transformOrder).filter((o: Order) => o.kitchenAccess) : []
-      try {
-        const res2 = await fetch('/api/orders?status=PENDING&kitchenAccess=true')
-        const pending = res2.ok ? (await res2.json()).map(transformOrder).filter((o: Order) => o.kitchenAccess) : []
-        setKitchenOrders([...pending, ...preparing])
-      } catch { setKitchenOrders(preparing) }
-    } catch { /* ignore */ } finally { setLoadingKitchen(false) }
-  }, [])
 
-  useEffect(() => { fetchKitchenOrders() }, [fetchKitchenOrders])
-
-  // Auto-refresh kitchen every 15 seconds
-  useEffect(() => {
-    kitchenIntervalRef.current = setInterval(() => {
-      fetchKitchenOrders()
-    }, 15000)
-    return () => { if (kitchenIntervalRef.current) clearInterval(kitchenIntervalRef.current) }
-  }, [fetchKitchenOrders])
 
   // Update relative timers every 30 seconds
   useEffect(() => {
     const updateTimers = () => {
-      const allOrders = [...orders, ...kitchenOrders]
       const timers: Record<string, string> = {}
-      allOrders.forEach((o) => { timers[o.id] = getRelativeTime(o.createdAt) })
+      orders.forEach((o) => { timers[o.id] = getRelativeTime(o.createdAt) })
       setRelativeTimers(timers)
     }
     updateTimers()
     const id = setInterval(updateTimers, 30000)
     return () => clearInterval(id)
-  }, [orders, kitchenOrders])
+  }, [orders])
 
   // ── Polling-based real-time (Vercel compatible) ───────────────────────────
   // Poll for new orders every 5 seconds on the admin panel, and refresh only on new orders
@@ -716,45 +721,18 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
             toast({ title: 'طلب جاهز للدفع', description: `عدد الطلبات الجاهزة للدفع الآن ${readyToPayOrders.length}` })
           }
 
-          setKitchenFlash(true)
-          setTimeout(() => setKitchenFlash(false), 2000)
           lastPendingCountRef.current = pendingOrders.length
           lastReadyToPayCountRef.current = readyToPayOrders.length
           fetchOrders()
           fetchStats(currentShiftId)
-          fetchKitchenOrders()
         }
       } catch { /* ignore polling errors */ }
     }, 5000)
 
     return () => clearInterval(pollInterval)
-  }, [currentShiftId, fetchOrders, fetchKitchenOrders, fetchStats, toast])
+  }, [currentShiftId, fetchOrders, fetchStats, toast])
 
-  // ── Fullscreen ────────────────────────────────────────────────────────────
-  const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
-    }
-  }, [])
 
-  // ── Kitchen urgency styling ───────────────────────────────────────────────
-  const getUrgencyClasses = (createdAt: string) => {
-    const mins = getElapsedMinutes(createdAt)
-    if (mins > 15) return 'border-red-500 animate-pulse'
-    if (mins > 10) return 'border-orange-500'
-    if (mins > 5) return 'border-yellow-500'
-    return 'border-border/50'
-  }
-
-  const getUrgencyTextColor = (createdAt: string) => {
-    const mins = getElapsedMinutes(createdAt)
-    if (mins > 15) return 'text-red-400'
-    if (mins > 10) return 'text-orange-400'
-    if (mins > 5) return 'text-yellow-400'
-    return 'text-muted-foreground'
-  }
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -801,11 +779,7 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
               <span className="hidden sm:inline">إدارة الطلبات</span>
               <span className="sm:hidden">الطلبات</span>
             </TabsTrigger>
-            <TabsTrigger value="kitchen" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
-              <ChefHat className="h-4 w-4" />
-              <span className="hidden sm:inline">المطبخ</span>
-              <span className="sm:hidden">المطبخ</span>
-            </TabsTrigger>
+
             <TabsTrigger value="shift" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
               <DollarSign className="h-4 w-4" />
               <span className="hidden sm:inline">الشيفت</span>
@@ -912,6 +886,11 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                                     <Badge variant="outline" className="border-[#D4AF37]/30 text-[#D4AF37] mt-1 text-[10px]">
                                       {meal.category}
                                     </Badge>
+                                    <div className="mt-1">
+                                      <span className={`text-[10px] font-bold ${PREP_AREAS.find(a => a.value === meal.preparationArea)?.color}`}>
+                                        جهة التحضير: {PREP_AREAS.find(a => a.value === meal.preparationArea)?.label || 'غير محدد'}
+                                      </span>
+                                    </div>
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">
@@ -1035,6 +1014,22 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Dish Name (English)</Label>
                     <Input value={newMeal.title} onChange={(e) => setNewMeal({ ...newMeal, title: e.target.value })} placeholder="e.g. Grilled Lamb Chops" className="bg-muted border-border/50" dir="ltr" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">جهة التحضير (المكان الذي سيظهر فيه الطلب) *</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {PREP_AREAS.map((area) => (
+                      <button
+                        key={area.value}
+                        onClick={() => setNewMeal({ ...newMeal, preparationArea: area.value as Meal['preparationArea'] })}
+                        className={`rounded-lg border px-4 py-2 text-xs transition-all ${
+                          newMeal.preparationArea === area.value ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]' : 'border-border/50 bg-muted/50 text-muted-foreground hover:border-[#D4AF37]/30'
+                        }`}
+                      >
+                        {area.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1426,6 +1421,32 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
                   )}
                 </div>
 
+                {/* Kitchen & Barista Sub-Status */}
+                {(order.kitchenStatus || order.baristaStatus) && order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
+                  <div className="flex gap-2 mt-2">
+                    {order.items.some(i => i.preparationArea === 'KITCHEN') && (
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                        order.kitchenStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
+                        order.kitchenStatus === 'PREPARING' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' :
+                        order.kitchenStatus === 'CANCELLED' ? 'border-red-500/30 bg-red-500/10 text-red-400' :
+                        'border-orange-500/30 bg-orange-500/10 text-orange-400'
+                      }`}>
+                        🔥 مطبخ: {order.kitchenStatus === 'READY' ? 'جاهز' : order.kitchenStatus === 'PREPARING' ? 'يحضر' : order.kitchenStatus === 'CANCELLED' ? 'ملغي' : 'ينتظر'}
+                      </span>
+                    )}
+                    {order.items.some(i => i.preparationArea === 'BARISTA') && (
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                        order.baristaStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
+                        order.baristaStatus === 'PREPARING' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
+                        order.baristaStatus === 'CANCELLED' ? 'border-red-500/30 bg-red-500/10 text-red-400' :
+                        'border-blue-500/30 bg-blue-500/10 text-blue-400'
+                      }`}>
+                        ☕ باريستا: {order.baristaStatus === 'READY' ? 'جاهز' : order.baristaStatus === 'PREPARING' ? 'يحضر' : order.baristaStatus === 'CANCELLED' ? 'ملغي' : 'ينتظر'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <Separator className="bg-border/20" />
 
                 {/* Footer */}
@@ -1547,186 +1568,6 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
           </TabsContent>
 
           {/* ═══════════════════════════════════════════════════════════════════
-              Tab 5: Kitchen Display
-              ═══════════════════════════════════════════════════════════════════ */}
-          <TabsContent value="kitchen">
-            <div className={`space-y-4 ${isFullscreen ? 'fixed inset-0 z-50 bg-background p-4 overflow-y-auto' : ''}`}>
-              {/* Kitchen Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10">
-                    <ChefHat className="h-5 w-5 text-[#D4AF37]" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-[#D4AF37]">شاشة المطبخ</h2>
-                    <p className="text-xs text-muted-foreground">الطلبات النشطة: {kitchenOrders.length}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={fetchKitchenOrders} className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    تحديث
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={toggleFullscreen} className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
-                    {isFullscreen ? <Minimize className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />}
-                    {isFullscreen ? 'خروج' : 'شاشة كاملة'}
-                  </Button>
-                </div>
-              </div>
-
-              {/* New order flash */}
-              <AnimatePresence>
-                {kitchenFlash && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="rounded-lg bg-green-500/10 border border-green-500/30 p-3 text-center text-green-400 font-bold"
-                  >
-                    🔔 طلب جديد وصل!
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Kitchen Orders Grid */}
-              {loadingKitchen ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" />
-                </div>
-              ) : kitchenOrders.length === 0 ? (
-                <div className="py-16 text-center text-muted-foreground">
-                  <ChefHat className="mx-auto mb-3 h-16 w-16 opacity-20" />
-                  <p className="text-lg">لا توجد طلبات نشطة</p>
-                  <p className="text-sm mt-1">المطبخ جاهز لاستقبال الطلبات</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  <AnimatePresence>
-                    {kitchenOrders.map((order) => {
-                      const typeInfo = ORDER_TYPE_MAP[order.type] ?? ORDER_TYPE_MAP.DINE_IN
-                      const elapsedMins = getElapsedMinutes(order.createdAt)
-                      const urgencyBorder = getUrgencyClasses(order.createdAt)
-                      const urgencyColor = getUrgencyTextColor(order.createdAt)
-                      const isUpdating = updatingOrderId === order.id
-
-                      return (
-                        <motion.div
-                          key={order.id}
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          layout
-                        >
-                          <Card className={`border-2 ${urgencyBorder} bg-card overflow-hidden`}>
-                            <CardContent className="p-5" dir="rtl">
-                              {/* Order Number - Very Large */}
-                              <div className="flex items-center justify-between mb-3">
-                                <span className="text-3xl font-black text-[#D4AF37]">#{order.orderNumber}</span>
-                                <Badge variant="outline" className={`gap-1.5 text-sm ${typeInfo.color} border-current/30`}>
-                                  {typeInfo.icon}
-                                  {typeInfo.label}
-                                </Badge>
-                              </div>
-
-                              {/* Table Number - Prominent for DINE_IN */}
-                              {order.type === 'DINE_IN' && order.tableNumber && (
-                                <div className="mb-3 rounded-xl bg-blue-500/10 border border-blue-500/20 p-3 text-center">
-                                  <p className="text-xs text-blue-300 mb-1">طاولة</p>
-                                  <p className="text-4xl font-black text-blue-400">{order.tableNumber}</p>
-                                </div>
-                              )}
-
-                              {/* Customer info */}
-                              <div className="mb-3 flex items-center gap-2 text-sm">
-                                <span className="font-semibold">{order.customerName}</span>
-                                {order.type === 'DELIVERY' && order.deliveryAddress && (
-                                  <span className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                                    <MapPin className="h-3 w-3 flex-shrink-0" />
-                                    {order.deliveryAddress}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Items - Large Text */}
-                              <div className="rounded-lg bg-muted/30 p-3 mb-3">
-                                {order.items.map((item, idx) => (
-                                  <div key={item.id ?? idx} className="flex items-center justify-between py-1.5">
-                                    <div className="flex items-center gap-3">
-                                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#D4AF37]/10 text-base font-black text-[#D4AF37]">
-                                        {item.quantity}
-                                      </span>
-                                      <span className="text-base font-semibold">{item.mealTitleAr || item.mealTitle}</span>
-                                    </div>
-                                    <span className="text-sm text-muted-foreground">{(item.price * item.quantity).toFixed(2)}</span>
-                                  </div>
-                                ))}
-                                {order.notes && (
-                                  <div className="mt-2 rounded-md bg-amber-500/5 border border-amber-500/20 p-2 text-xs text-amber-300">
-                                    ⚠️ {order.notes}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Time Elapsed */}
-                              <div className="flex items-center justify-center gap-2 mb-4">
-                                <AlertTriangle className={`h-4 w-4 ${urgencyColor}`} />
-                                <span className={`text-sm font-bold ${urgencyColor}`}>
-                                  {elapsedMins > 15 && 'متأخر! '}
-                                  {relativeTimers[order.id] ?? getRelativeTime(order.createdAt)}
-                                </span>
-                              </div>
-
-                              {/* Status Buttons - Large, Touch-Friendly */}
-                              <div className="flex flex-col gap-2">
-                                {order.status === 'PENDING' && (
-                                  <Button
-                                    onClick={() => updateOrderStatus(order.id, 'CONFIRMED')}
-                                    disabled={isUpdating}
-                                    className="w-full gap-2 bg-green-600 text-white hover:bg-green-700 h-12 text-base font-bold"
-                                  >
-                                    {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                                    تأكيد الطلب
-                                  </Button>
-                                )}
-                                {order.status === 'CONFIRMED' && (
-                                  <Button
-                                    onClick={() => updateOrderStatus(order.id, 'PREPARING')}
-                                    disabled={isUpdating}
-                                    className="w-full gap-2 bg-[#D4AF37] text-black hover:bg-[#C9A431] h-12 text-base font-bold"
-                                  >
-                                    {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Flame className="h-4 w-4" />}
-                                    بدء التحضير
-                                  </Button>
-                                )}
-                                {order.status === 'PREPARING' && (
-                                  <Button
-                                    onClick={() => updateOrderStatus(order.id, 'READY')}
-                                    disabled={isUpdating}
-                                    className="w-full gap-2 bg-blue-600 text-white hover:bg-blue-700 h-12 text-base font-bold"
-                                  >
-                                    {isUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                                    جاهز!
-                                  </Button>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </motion.div>
-                      )
-                    })}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* Auto-refresh indicator */}
-              <div className="text-center text-xs text-muted-foreground py-2">
-                <Timer className="h-3 w-3 inline-block ml-1" />
-                يتم التحديث تلقائياً كل 15 ثانية
-              </div>
-            </div>
-          </TabsContent>
-
-          {/* ═══════════════════════════════════════════════════════════════════
               Tab: Shift Management
               ═══════════════════════════════════════════════════════════════════ */}
           <TabsContent value="shift">
@@ -1759,6 +1600,22 @@ export function AdminPanel({ onLogout }: { onLogout: () => void }) {
               <div className="space-y-2">
                 <Label className="text-sm font-medium">السعر (ر.س)</Label>
                 <Input type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} className="bg-muted border-border/50" step="0.01" dir="ltr" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">جهة التحضير</Label>
+                <div className="flex flex-wrap gap-2">
+                  {PREP_AREAS.map((area) => (
+                    <button
+                      key={area.value}
+                      onClick={() => setEditPrepArea(area.value as Meal['preparationArea'])}
+                      className={`rounded-lg border px-4 py-2 text-xs transition-all ${
+                        editPrepArea === area.value ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]' : 'border-border/50 bg-muted/50 text-muted-foreground hover:border-[#D4AF37]/30'
+                      }`}
+                    >
+                      {area.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -2115,12 +1972,14 @@ function ShiftManagement({ adminUsername }: { adminUsername: string }) {
         </Card>
       ) : (
         <Card className="border-border/40 bg-card">
-          <CardContent className="p-6 text-center space-y-4">
-            <StopCircle className="h-12 w-12 text-muted-foreground/30 mx-auto" />
+          <CardContent className="p-6 space-y-6">
+            <div className="text-center space-y-4">
+              <StopCircle className="h-12 w-12 text-muted-foreground/30 mx-auto" />
             <p className="text-muted-foreground">لا يوجد شيفت مفتوح حالياً</p>
             <Button onClick={startNewShift} className="gap-2 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold">
               <PlayCircle className="h-4 w-4" />بدء شيفت جديد
             </Button>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -2233,6 +2092,7 @@ const ROLE_MAP: Record<string, { label: string; color: string }> = {
   CASHIER: { label: 'كاشير', color: 'text-blue-400' },
   KITCHEN: { label: 'مطبخ', color: 'text-orange-400' },
   WAITER: { label: 'ويتر', color: 'text-purple-400' },
+  BARISTA: { label: 'باريستا', color: 'text-cyan-400' }, // إضافة لون مميز للباريستا
 }
 
 function StaffManagement() {
@@ -2348,6 +2208,7 @@ function StaffManagement() {
                 <option value="CASHIER">كاشير</option>
                 <option value="KITCHEN">مطبخ</option>
                 <option value="WAITER">ويتر</option>
+                <option value="BARISTA">باريستا</option>
                 <option value="ADMIN">أدمن</option>
               </select>
             </div>
@@ -2375,6 +2236,7 @@ function StaffManagement() {
                       <select value={editRole || member.role} onChange={e => setEditRole(e.target.value)}
                         className="w-full rounded-lg border border-border/50 bg-muted/50 p-2 text-sm text-right">
                         <option value="CASHIER">كاشير</option>
+                        <option value="BARISTA">باريستا</option>
                         <option value="KITCHEN">مطبخ</option>
                         <option value="WAITER">ويتر</option>
                         <option value="ADMIN">أدمن</option>

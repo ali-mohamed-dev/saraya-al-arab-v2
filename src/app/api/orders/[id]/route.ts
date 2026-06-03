@@ -48,6 +48,10 @@ export async function PUT(
     if (body.tableNumber !== undefined) updateData.tableNumber = body.tableNumber
     if (body.pickupTime !== undefined) updateData.pickupTime = body.pickupTime
     if (body.shiftId !== undefined) updateData.shiftId = body.shiftId
+    if (body.kitchenStatus !== undefined) updateData.kitchenStatus = body.kitchenStatus
+    if (body.baristaStatus !== undefined) updateData.baristaStatus = body.baristaStatus
+    if (body.kitchenAccess !== undefined) updateData.kitchenAccess = body.kitchenAccess
+    if (body.cancelledBy !== undefined) updateData.cancelledBy = body.cancelledBy
 
     if (Array.isArray(body.itemsToAdd) && body.itemsToAdd.length > 0) {
       const itemsToAdd = body.itemsToAdd.map((item: any) => ({
@@ -131,9 +135,12 @@ export async function PUT(
     const finalItems = await db.orderItem.findMany({ where: { orderId: id } })
     const finalSubtotal = finalItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
     const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
+    const finalServiceCharge = Math.round(finalSubtotal * ratio * 100) / 100
+    const finalTotal = finalSubtotal + finalServiceCharge
+
     updateData.subtotal = finalSubtotal
-    updateData.serviceCharge = Math.round(finalSubtotal * ratio * 100) / 100
-    updateData.total = updateData.subtotal + (updateData.serviceCharge as number)
+    updateData.serviceCharge = finalServiceCharge
+    updateData.total = finalTotal
 
     const order = await db.order.update({
       where: { id },

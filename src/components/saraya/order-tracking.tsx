@@ -51,7 +51,14 @@ const STATUS_STEPS = [
   { key: 'DELIVERED', label: 'تم التسليم', labelEn: 'Delivered', icon: CheckCircle, estimatedMinutes: 0 },
 ]
 
+// حالات مكتملة لا تظهر في الخط الزمني لكن تُعامَل كنهاية
+const TERMINAL_STATUSES: Record<string, number> = {
+  READY_TO_PAY: 3, // يساوي READY في الترتيب
+  DELIVERED:    4,
+}
+
 function getStatusIndex(status: string): number {
+  if (status in TERMINAL_STATUSES) return TERMINAL_STATUSES[status]
   const idx = STATUS_STEPS.findIndex((s) => s.key === status)
   return idx >= 0 ? idx : 0
 }
@@ -115,7 +122,7 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
       setOrder(data)
       setError(null)
 
-      // إذا انتهى الطلب، نمسحه من الذاكرة المحلية للمتصفح
+      // إذا انتهى الطلب فعلياً، نمسحه من الذاكرة المحلية
       if (['DELIVERED', 'CANCELLED'].includes(data.status)) {
         localStorage.removeItem('saraya-active-order-id')
       }
@@ -133,30 +140,22 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
     fetchOrder()
   }, [fetchOrder])
 
-  // Auto-refresh every 10 seconds
+  // Auto-refresh every 5 seconds
   useEffect(() => {
     intervalRef.current = setInterval(() => {
       fetchOrder()
-    }, 10000)
+    }, 5000)
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
   }, [fetchOrder])
 
-  // Polling for real-time updates (Vercel compatible - every 5 seconds)
-  useEffect(() => {
-    const pollInterval = setInterval(() => {
-      fetchOrder()
-    }, 5000)
-
-    return () => {
-      clearInterval(pollInterval)
-    }
-  }, [fetchOrder])
-
   const currentStatusIndex = order ? getStatusIndex(order.status) : 0
   const isCancelled = order?.status === 'CANCELLED'
+  const isReadyToPay = order?.status === 'READY_TO_PAY'
+  const isDelivered = order?.status === 'DELIVERED'
+  const isFinished = isDelivered
 
   // Loading state
   if (loading) {
@@ -184,6 +183,59 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
           <RefreshCw className="h-4 w-4" />
           إعادة المحاولة
         </Button>
+      </div>
+    )
+  }
+
+  // شاشة "جاهز للدفع" - الكاشير سيتولى الأمر
+  if (isReadyToPay) {
+    return (
+      <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 p-6 text-center" dir="rtl">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20"
+        >
+          <CheckCircle className="h-10 w-10 text-emerald-400" />
+        </motion.div>
+        <p className="text-xl font-bold text-white">طلبك جاهز! 🎉</p>
+        <p className="text-sm text-gray-400">طلبك تم تحضيره وجاهز للدفع. سيتولى الكاشير إتمام عملية الدفع.</p>
+        <div className="w-full rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-sm text-emerald-300 text-center">
+          في انتظار الكاشير للدفع
+        </div>
+        {onBackToMenu && (
+          <Button
+            className="w-full mt-2 bg-[#D4AF37] text-black font-bold hover:bg-[#c9a430]"
+            onClick={onBackToMenu}
+          >
+            العودة للقائمة
+          </Button>
+        )}
+      </div>
+    )
+  }
+
+  // إذا تم التسليم، نعرض رسالة النجاح
+  if (isFinished) {
+    return (
+      <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 p-6 text-center" dir="rtl">
+        <motion.div 
+          initial={{ scale: 0 }} 
+          animate={{ scale: 1 }}
+          className="flex h-20 w-20 items-center justify-center rounded-full bg-green-500/20"
+        >
+          <CheckCircle className="h-10 w-10 text-green-500" />
+        </motion.div>
+        <p className="text-xl font-bold text-white">تم توصيل طلبك بنجاح!</p>
+        <p className="text-sm text-gray-400">بالهناء والشفاء! نتمنى أن تكون قد استمتعت بطلبك. يمكنك بدء طلب جديد في أي وقت من القائمة.</p>
+        {onBackToMenu && (
+          <Button
+            className="w-full mt-4 bg-[#D4AF37] text-black font-bold hover:bg-[#c9a430]"
+            onClick={onBackToMenu}
+          >
+            العودة للقائمة
+          </Button>
+        )}
       </div>
     )
   }
@@ -245,7 +297,6 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
         {STATUS_STEPS.map((step, index) => {
           const isCompleted = !isCancelled && currentStatusIndex > index
           const isCurrent = !isCancelled && currentStatusIndex === index
-          const isFuture = !isCancelled && currentStatusIndex < index
           const StepIcon = step.icon
 
           return (

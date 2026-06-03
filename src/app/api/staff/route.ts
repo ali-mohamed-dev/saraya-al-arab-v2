@@ -1,49 +1,52 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-// GET /api/staff - list all staff (non-admin can only list)
+// جلب قائمة الموظفين
 export async function GET() {
   try {
     const staff = await db.admin.findMany({
-      select: { id: true, username: true, role: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
+      select: { id: true, username: true, role: true, createdAt: true }
     })
     return NextResponse.json(staff)
   } catch (error) {
-    console.error('Error fetching staff:', error)
-    return NextResponse.json({ error: 'Failed to fetch staff' }, { status: 500 })
+    return NextResponse.json({ error: 'فشل في جلب الموظفين' }, { status: 500 })
   }
 }
 
-// POST /api/staff - create new staff member (admin only)
-export async function POST(request: NextRequest) {
+// إضافة موظف جديد
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json()
+    const body = await req.json()
     const { username, password, role } = body
-
+    
     if (!username || !password || !role) {
-      return NextResponse.json({ error: 'Username, password and role are required' }, { status: 400 })
+      return NextResponse.json({ error: 'جميع الحقول مطلوبة' }, { status: 400 })
     }
 
-    const validRoles = ['ADMIN', 'WAITER', 'CASHIER', 'KITCHEN']
+    // السماح بصلاحية BARISTA الجديدة هنا لكي لا يعطي الخطأ 400
+    const validRoles = ['ADMIN', 'WAITER', 'CASHIER', 'KITCHEN', 'BARISTA']
     if (!validRoles.includes(role)) {
-      return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+      return NextResponse.json({ error: 'صلاحية غير صالحة' }, { status: 400 })
     }
 
-    // Check if username already exists
+    // التأكد من عدم تكرار اسم المستخدم
     const existing = await db.admin.findUnique({ where: { username } })
     if (existing) {
-      return NextResponse.json({ error: 'Username already exists' }, { status: 409 })
+      return NextResponse.json({ error: 'اسم المستخدم موجود بالفعل' }, { status: 400 })
     }
 
     const staff = await db.admin.create({
-      data: { username, password, role },
-      select: { id: true, username: true, role: true, createdAt: true },
+      data: {
+        username,
+        password, // ملاحظة: يفضل تشفير كلمة المرور في المشاريع الحقيقية
+        role
+      }
     })
 
-    return NextResponse.json(staff, { status: 201 })
+    return NextResponse.json(staff)
   } catch (error) {
-    console.error('Error creating staff:', error)
-    return NextResponse.json({ error: 'Failed to create staff member' }, { status: 500 })
+    console.error('Staff creation error:', error)
+    return NextResponse.json({ error: 'فشل في إضافة الموظف' }, { status: 500 })
   }
 }

@@ -418,7 +418,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           item.mealId === meal.id ? { ...item, quantity: item.quantity + 1 } : item
         )
       }
-      return [
+      const next = [
         ...prev,
         {
           mealId: meal.id,
@@ -431,6 +431,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           addOns: [],
         },
       ]
+      return next
     })
   }
 
@@ -908,7 +909,17 @@ const requestBody: Record<string, unknown> = {
         transition={{ delay: 0.5, type: 'spring', stiffness: 200 }}
       >
         <Button
-          onClick={() => setShowNewOrder(true)}
+          onClick={() => {
+            // تصفير البيانات هنا فقط عند ضغطة الزر لفتح طلب "جديد فعلياً"
+            setCart([])
+            setOrderType('DINE_IN')
+            setTableNumber('')
+            setCustomerName('')
+            setCustomerPhone('')
+            setDeliveryAddress('')
+            setNotes('')
+            setShowNewOrder(true)
+          }}
           className="h-14 w-14 rounded-full bg-[#D4AF37] text-black shadow-lg shadow-[#D4AF37]/25 hover:bg-[#D4AF37]/90 transition-all active:scale-95"
           size="icon"
         >

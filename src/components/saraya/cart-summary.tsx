@@ -9,7 +9,7 @@ import {
   ArrowRight, ArrowLeft, ChefHat, Receipt
 } from 'lucide-react'
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetDescription
 } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -148,6 +148,8 @@ export function CartSummary() {
           quantity: item.quantity,
           addOns: JSON.stringify(item.addOns || []),
           imageUrl: item.imageUrl,
+          category: (item as { category?: string }).category || '',
+          preparationArea: (item as { preparationArea?: string }).preparationArea || 'KITCHEN',
         })),
         subtotal,
         serviceCharge: finalServiceCharge,
@@ -175,6 +177,34 @@ export function CartSummary() {
               }),
             });
             isUpdate = true;
+
+            // لو كل الأصناف المضافة أصناف صالة (HALL) → تحقق هل الأوردر جاهز فعلاً
+            if (response.ok) {
+              const allAddedAreHall = orderPayload.items.every(
+                (item: { preparationArea?: string }) => item.preparationArea === 'HALL'
+              )
+              if (allAddedAreHall) {
+                const refreshRes = await fetch(`/api/orders/${activeOrderId}`)
+                if (refreshRes.ok) {
+                  const refreshed = await refreshRes.json()
+                  const hasKitchen = refreshed.items?.some(
+                    (i: { preparationArea?: string }) => i.preparationArea === 'KITCHEN'
+                  )
+                  const hasBarista = refreshed.items?.some(
+                    (i: { preparationArea?: string }) => i.preparationArea === 'BARISTA'
+                  )
+                  const kitchenDone = !hasKitchen || refreshed.kitchenStatus === 'READY' || refreshed.kitchenStatus === 'CANCELLED'
+                  const baristaDone = !hasBarista || refreshed.baristaStatus === 'READY' || refreshed.baristaStatus === 'CANCELLED'
+                  if (kitchenDone && baristaDone) {
+                    await fetch(`/api/orders/${activeOrderId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ status: 'READY' }),
+                    })
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -281,6 +311,7 @@ export function CartSummary() {
             {step === 'confirm' && 'تأكيد الطلب'}
             {step === 'success' && 'تم بنجاح!'}
           </SheetTitle>
+          <SheetDescription className="sr-only">ملخص المشتريات وعملية الدفع</SheetDescription>
           {/* Step indicator */}
           {step !== 'success' && (
             <div className="flex items-center gap-2 pt-1">

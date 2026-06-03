@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription
 } from '@/components/ui/sheet'
 import { useCartStore, type SelectedAddOn } from '@/store/cart-store'
 import { useToast } from '@/hooks/use-toast'
@@ -25,6 +25,7 @@ interface Meal {
   prepTime: string
   category: string
   categoryAr: string
+  preparationArea: 'KITCHEN' | 'BARISTA' | 'HALL'
   imageUrl: string
   isActive: boolean
 }
@@ -98,8 +99,11 @@ export function OrderDetail({ meal, open, onClose }: OrderDetailProps) {
       titleAr: meal.titleAr,
       price: meal.price,
       imageUrl: meal.imageUrl,
+      category: meal.category,
+      preparationArea: meal.preparationArea,
       addOns: selectedAddOns,
-    })
+      quantity: quantity,
+    } as any)
     setAddedToCart(true)
     toast({
       title: 'تمت الإضافة للسلة! 🎉',
@@ -122,6 +126,11 @@ export function OrderDetail({ meal, open, onClose }: OrderDetailProps) {
         side="left"
         className="w-full sm:max-w-lg border-[#D4AF37]/20 bg-[#0F1419] text-white p-0 overflow-y-auto"
       >
+        <SheetHeader className="sr-only">
+          <SheetTitle>{meal.titleAr}</SheetTitle>
+          <SheetDescription>{meal.descriptionAr}</SheetDescription>
+        </SheetHeader>
+
         {/* Hero Image */}
         <div className="relative h-56 md:h-64">
           {meal.imageUrl ? (

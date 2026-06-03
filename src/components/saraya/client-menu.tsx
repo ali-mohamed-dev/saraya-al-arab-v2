@@ -56,7 +56,6 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
     const savedId = localStorage.getItem('saraya-active-order-id')
     if (savedId && !trackedOrderId) {
       // نحن لا نفتحه تلقائياً لكي لا نزعج العميل، لكن نجهزه للزر
-      console.log('Active order found in storage:', savedId)
     }
   }, [trackedOrderId])
 
@@ -132,10 +131,10 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
       if (res.ok) {
         const orders = await res.json()
         
-        const activeOrders = orders.filter((o: any) => !['DELIVERED', 'CANCELLED'].includes(o.status))
+        const activeOrders = orders.filter((o: { status: string }) => !['DELIVERED', 'CANCELLED'].includes(o.status))
 
         if (activeOrders.length > 0) {
-          const latestOrder = activeOrders.sort((a: any, b: any) => 
+          const latestOrder = activeOrders.sort((a: { createdAt: string }, b: { createdAt: string }) => 
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           )[0]
           setTrackedOrderId(latestOrder.id)

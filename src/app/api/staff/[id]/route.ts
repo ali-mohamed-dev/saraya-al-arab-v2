@@ -1,44 +1,51 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-// PUT /api/staff/[id] - update staff role or password
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// تعديل بيانات موظف
+export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params
-    const body = await request.json()
+    const body = await req.json()
     const { role, password } = body
-
-    const updateData: Record<string, string> = {}
-    if (role) updateData.role = role
-    if (password) updateData.password = password
+    
+    const data: Record<string, any> = {}
+    
+    if (role) {
+      const validRoles = ['ADMIN', 'WAITER', 'CASHIER', 'KITCHEN', 'BARISTA']
+      if (!validRoles.includes(role)) {
+        return NextResponse.json({ error: 'صلاحية غير صالحة' }, { status: 400 })
+      }
+      data.role = role
+    }
+    
+    if (password) {
+      data.password = password
+    }
 
     const staff = await db.admin.update({
-      where: { id },
-      data: updateData,
-      select: { id: true, username: true, role: true, createdAt: true },
+      where: { id: params.id },
+      data
     })
 
     return NextResponse.json(staff)
   } catch (error) {
-    console.error('Error updating staff:', error)
-    return NextResponse.json({ error: 'Failed to update staff member' }, { status: 500 })
+    return NextResponse.json({ error: 'فشل في تحديث بيانات الموظف' }, { status: 500 })
   }
 }
 
-// DELETE /api/staff/[id] - delete staff member
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// حذف موظف
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { id } = await params
-    await db.admin.delete({ where: { id } })
+    // منع حذف حساب الأدمن الأساسي (اختياري لكن يفضل)
+    const target = await db.admin.findUnique({ where: { id: params.id } })
+    if (target?.username === 'admin') {
+      return NextResponse.json({ error: 'لا يمكن حذف حساب المدير الرئيسي' }, { status: 400 })
+    }
+
+    await db.admin.delete({
+      where: { id: params.id }
+    })
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error deleting staff:', error)
-    return NextResponse.json({ error: 'Failed to delete staff member' }, { status: 500 })
+    return NextResponse.json({ error: 'فشل في حذف الموظف' }, { status: 500 })
   }
 }

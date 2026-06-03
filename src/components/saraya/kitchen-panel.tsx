@@ -23,6 +23,7 @@ interface OrderItem {
   quantity: number
   price: number
   category?: string
+  preparationArea?: 'KITCHEN' | 'BARISTA' | 'HALL'
   addOns?: { title: string; titleAr: string; price: number }[]
   imageUrl?: string
   addedQuantity?: number
@@ -30,8 +31,9 @@ interface OrderItem {
   updatedAt: string
 }
 
-function isHallItem(item: OrderItem) {
-  return (item.category?.trim() || '') === 'اصناف الصالة'
+function isKitchenItem(item: OrderItem) {
+  // سيظهر في المطبخ فقط إذا كان الحقل KITCHEN صراحةً
+  return item.preparationArea === 'KITCHEN'
 }
 
 interface Order {
@@ -44,6 +46,8 @@ interface Order {
   deliveryAddress?: string
   tableNumber?: string
   items: OrderItem[]
+  kitchenStatus: string
+  baristaStatus: string
   subtotal: number
   serviceCharge: number
   total: number
@@ -134,6 +138,8 @@ function transformOrder(raw: Record<string, unknown>): Order {
     customerPhone: (raw.customerPhone as string) || '',
     deliveryAddress: (raw.deliveryAddress as string) || undefined,
     tableNumber: (raw.tableNumber as string) || undefined,
+    kitchenStatus: (raw.kitchenStatus as string) || 'PENDING',
+    baristaStatus: (raw.baristaStatus as string) || 'PENDING',
     subtotal: Number(raw.subtotal ?? 0),
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
@@ -156,7 +162,8 @@ function transformOrder(raw: Record<string, unknown>): Order {
         mealTitleAr: (item.mealTitleAr as string) || '',
         price: Number(item.price ?? 0),
         quantity: Number(item.quantity ?? 1),
-        category: ((item.category as string) || '').trim() || undefined,
+        category: (item.category as string) || undefined,
+        preparationArea: (item.preparationArea as OrderItem['preparationArea']) || undefined,
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
         addedQuantity: Number(item.lastAddedQuantity ?? 0),
@@ -193,7 +200,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
   const [shiftLoading, setShiftLoading] = useState(true)
 
-  const prevOrderCountRef = useRef(0)
+  const prevOrderIdsRef = useRef<Set<string>>(new Set())
   const prevOrderUpdatedAtRef = useRef<Record<string, string>>({})
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -228,38 +235,50 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
       // Fetch only confirmed and preparing orders for the kitchen.
       // Pending orders should not appear in the kitchen until confirmed by waiter/cashier/admin.
-      const [confirmedRes, preparingRes] = await Promise.all([
+      const [pendingRes, confirmedRes, preparingRes, readyRes] = await Promise.all([
+        fetch('/api/orders?status=PENDING'),
         fetch('/api/orders?status=CONFIRMED'),
         fetch('/api/orders?status=PREPARING'),
+        fetch('/api/orders?status=READY'),
       ])
 
+      const pending: Order[] = pendingRes.ok ? (await pendingRes.json()).map(transformOrder) : []
       const confirmed: Order[] = confirmedRes.ok ? (await confirmedRes.json()).map(transformOrder) : []
       const preparing: Order[] = preparingRes.ok ? (await preparingRes.json()).map(transformOrder) : []
+      const ready: Order[] = readyRes.ok ? (await readyRes.json()).map(transformOrder) : []
 
-      // Sort: oldest first (most urgent)
-      const allOrders = [...confirmed, ...preparing].sort(
+      const allOrders = [...pending, ...confirmed, ...preparing, ...ready].sort(
         (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       )
 
-      const updatedOrders = allOrders.filter((order) =>
-        prevOrderUpdatedAtRef.current[order.id] &&
-        prevOrderUpdatedAtRef.current[order.id] !== order.updatedAt
+      // Filter orders to only show those that have items for the kitchen AND kitchen hasn't finished yet
+      const visibleOrders = allOrders.filter((order) =>
+        order.items.some((item) => isKitchenItem(item)) && 
+        order.kitchenStatus !== 'READY' &&
+        order.kitchenStatus !== 'CANCELLED'
       )
 
-      // Filter out orders that contain only hall items
-      const visibleOrders = allOrders.filter((order) =>
-        order.items.some((item) => !isHallItem(item))
-      )
+      // مراقبة المحتوى الخاص بالمطبخ فقط لتجنب تنبيهات تحديثات الباريستا
+      const updatedOrders = visibleOrders.filter((order) => {
+        const prevContent = prevOrderUpdatedAtRef.current[order.id]
+        const currentContent = JSON.stringify(order.items.filter(isKitchenItem)) + (order.notes || '')
+        return prevContent && prevContent !== currentContent
+      })
+
+      const currentIds = new Set(visibleOrders.map((o) => o.id))
+      const newOrders = visibleOrders.filter((o) => !prevOrderIdsRef.current.has(o.id))
 
       // Detect new confirmed orders
-      if (visibleOrders.length > prevOrderCountRef.current && prevOrderCountRef.current > 0) {
+      if (newOrders.length > 0 && prevOrderIdsRef.current.size > 0) {
         setFlashActive(true)
         setTimeout(() => setFlashActive(false), 2000)
-        const newOrder = visibleOrders.find(o => o.status === 'CONFIRMED')
-        if (newOrder) {
-          playNotificationSound()
-          toast({ title: 'طلب جديد!', description: `طلب رقم #${newOrder.orderNumber}` })
-        }
+        playNotificationSound()
+        toast({ 
+          title: 'طلب جديد!', 
+          description: newOrders.length === 1 
+            ? `طلب رقم #${newOrders[0].orderNumber}` 
+            : `وصل ${newOrders.length} طلبات جديدة للمطبخ` 
+        })
       }
 
       // Detect order updates, such as items added to existing kitchen orders
@@ -276,8 +295,9 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
         })
       }
 
-      prevOrderCountRef.current = visibleOrders.length
-      prevOrderUpdatedAtRef.current = Object.fromEntries(visibleOrders.map((o) => [o.id, o.updatedAt]))
+      prevOrderIdsRef.current = currentIds
+      // نخزن Snapshot للمحتوى بدل الوقت
+      prevOrderUpdatedAtRef.current = Object.fromEntries(visibleOrders.map((o) => [o.id, JSON.stringify(o.items.filter(isKitchenItem)) + (o.notes || '')]))
 
       setOrders(visibleOrders)
     } catch {
@@ -288,30 +308,90 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   }, [toast, shiftOpen])
 
   // ── Update order status ──────────────────────────────────────────────────
-  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+  const updateKitchenStatus = async (orderId: string, newStatus: string) => {
+    const order = orders.find(o => o.id === orderId)
+    if (!order) return
+
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const payload: Record<string, unknown> = { kitchenStatus: newStatus }
+
+      // ─── عند بدء التحضير ───────────────────────────────────────
+      if (newStatus === 'PREPARING') {
+        // نأكد إن الطلب وصل للمطبخ بتفعيل kitchenAccess
+        payload.kitchenAccess = true
+
+        // لو الحالة العامة أقل من PREPARING، نرفعها
+        if (order.status === 'PENDING') {
+          // الطلب لسه جديد - نأكده أولاً ثم نبدأ التحضير
+          payload.status = 'CONFIRMED'
+          payload.baristaStatus = order.baristaStatus === 'PENDING' ? 'CONFIRMED' : order.baristaStatus
+          // ثم نبدأ التحضير مباشرة
+          payload.kitchenStatus = 'PREPARING'
+          payload.status = 'PREPARING'
+        } else if (order.status === 'CONFIRMED') {
+          payload.status = 'PREPARING'
+        }
+        // لو الحالة العامة PREPARING أو أكتر، مفيش داعي نغيرها
+      }
+
+      // ─── عند الانتهاء ───────────────────────────────────────
+      if (newStatus === 'READY') {
+        const hasBarista = order.items.some(i => i.preparationArea === 'BARISTA')
+        const baristaDone = !hasBarista || order.baristaStatus === 'READY' || order.baristaStatus === 'CANCELLED'
+        
+        if (baristaDone) {
+          payload.status = 'READY'
+        }
+      }
+
+      // ─── عند الإلغاء ───────────────────────────────────────
+      if (newStatus === 'CANCELLED') {
+        const hasBarista = order.items.some(i => i.preparationArea === 'BARISTA')
+        if (!hasBarista) {
+          // مفيش باريستا - نلغي الطلب بالكامل
+          payload.status = 'CANCELLED'
+        }
+        // لو فيه باريستا، فضل الطلب شغال عند الباريستا
+      }
+
+
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       })
+
+
       if (res.ok) {
-        const statusLabel = ORDER_STATUS_MAP[newStatus]?.label || newStatus
-        toast({ title: 'تم تحديث الحالة', description: `تم تغيير الحالة إلى: ${statusLabel}` })
-        // Immediately update local state for faster UI
-        setOrders(prev => prev.filter(o => {
-          if (o.id !== orderId) return true
-          // Remove orders that moved to READY from the active list
-          return newStatus !== 'READY' && newStatus !== 'CANCELLED'
-        }))
-        prevOrderCountRef.current = Math.max(0, prevOrderCountRef.current - (newStatus === 'READY' || newStatus === 'CANCELLED' ? 1 : 0))
+        const updatedOrderRaw = await res.json().catch(() => null)
+        const updatedOrder = updatedOrderRaw ? transformOrder(updatedOrderRaw) : null
+
+
+        toast({ title: 'تحديث المطبخ', description: `أصبح طلب المطبخ: ${newStatus === 'READY' ? 'جاهزاً' : 'قيد الطهي'}` })
+        
+        setOrders(prev => {
+          const next = prev
+            .map(o => o.id === orderId ? (updatedOrder || { ...o, kitchenStatus: newStatus }) : o)
+            .filter(o => o.kitchenStatus !== 'READY' && o.kitchenStatus !== 'CANCELLED')
+          
+          prevOrderIdsRef.current = new Set(next.map(o => o.id))
+          if (updatedOrder) {
+            prevOrderUpdatedAtRef.current[orderId] = JSON.stringify(updatedOrder.items.filter(isKitchenItem)) + (updatedOrder.notes || '')
+          }
+          return next
+        })
+
+        // نعمل refresh بعد التحديث مباشرة عشان نتأكد إن الحالة اتحفظت فعلاً
+        setTimeout(() => fetchOrders(), 1000)
       } else {
         const data = await res.json().catch(() => ({}))
-        toast({ title: 'خطأ', description: data.error || 'فشل في تحديث الحالة', variant: 'destructive' })
+        console.error('[Kitchen] Update failed:', res.status, data)
+        toast({ title: 'خطأ في التحديث', description: data.error || `فشل في تحديث الحالة (كود ${res.status})`, variant: 'destructive' })
         fetchOrders() // Refresh to ensure consistency
       }
-    } catch {
+    } catch (err) {
+      console.error('[Kitchen] Network error:', err)
       toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
     } finally {
       setUpdatingOrderId(null)
@@ -395,16 +475,6 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     )
   }
 
-  if (shiftLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
-        <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
-          <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
-        </div>
-      </div>
-    )
-  }
-
   if (shiftOpen === false) {
     return (
       <div className="min-h-screen bg-background" dir="rtl">
@@ -442,16 +512,16 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   const totalCount = orders.length
 
   // ── Get next status action for an order ──────────────────────────────────
-  const getNextAction = (order: Order): { status: string; label: string; color: string; icon: React.ReactNode } | null => {
-    switch (order.status) {
+  const getNextAction = (order: Order): { nextSubStatus: string; label: string; color: string; icon: React.ReactNode } | null => {
+    switch (order.kitchenStatus) {
       case 'PENDING':
-        return { status: 'CONFIRMED', label: 'تأكيد', color: 'bg-blue-600 hover:bg-blue-500 text-white', icon: <CheckCircle className="h-5 w-5" /> }
       case 'CONFIRMED':
-        return { status: 'PREPARING', label: 'تحضير', color: 'bg-amber-600 hover:bg-amber-500 text-white', icon: <Flame className="h-5 w-5" /> }
+        return { nextSubStatus: 'PREPARING', label: 'بدء التحضير', color: 'bg-blue-600 hover:bg-blue-500 text-white', icon: <Flame className="h-5 w-5" /> }
       case 'PREPARING':
-        return { status: 'READY', label: 'جاهز!', color: 'bg-green-600 hover:bg-green-500 text-white', icon: <CheckCircle className="h-5 w-5" /> }
+        return { nextSubStatus: 'READY', label: 'جاهز للاستلام', color: 'bg-green-600 hover:bg-green-500 text-white', icon: <CheckCircle className="h-5 w-5" /> }
       default:
-        return null
+        // إذا كانت الحالة غير معروفة ولكن الكارت ظاهر، نظهر زر الجاهزية كاحتياط
+        return { nextSubStatus: 'READY', label: 'جاهز للاستلام', color: 'bg-green-600 hover:bg-green-500 text-white', icon: <CheckCircle className="h-5 w-5" /> }
     }
   }
 
@@ -466,8 +536,8 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
         <div className="mx-auto flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
           {/* Right side: Logo + Title */}
           <div className="flex items-center gap-2 md:gap-3">
-            <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10">
-              <ChefHat className="h-5 w-5 text-[#D4AF37]" />
+            <div className="flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10 overflow-hidden">
+              <img src="/logo.webp" alt="Logo" className="h-full w-full object-cover" />
             </div>
             <div>
               <h1 className="text-base md:text-lg font-bold text-[#D4AF37]">شاشة المطبخ</h1>
@@ -525,11 +595,6 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
           <div className="flex items-center gap-2">
             <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
             <span className="text-xs md:text-sm font-medium text-blue-400">مؤكد: {confirmedCount}</span>
-          </div>
-          <Separator orientation="vertical" className="h-5 bg-border/30" />
-          <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-            <span className="text-xs md:text-sm font-medium text-amber-400">قيد التحضير: {preparingCount}</span>
           </div>
           <Separator orientation="vertical" className="h-5 bg-border/30" />
           <div className="flex items-center gap-2">
@@ -659,7 +724,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
                       {/* Items List - Large text for kitchen readability */}
                       <div className="space-y-1.5 mb-3">
-                        {order.items.filter((item) => !isHallItem(item)).map((item, idx) => {
+                        {order.items.filter((item) => isKitchenItem(item)).map((item, idx) => {
                           const isNewItem = (item.addedQuantity ?? 0) > 0
                           return (
                             <div key={item.id || idx} className="flex items-start gap-2">
@@ -695,9 +760,9 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
                             </div>
                           )
                         })}
-                        {order.items.some((item) => isHallItem(item)) && (
+                        {order.items.some((item) => !isKitchenItem(item)) && (
                           <div className="rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5 px-3 py-2 text-[11px] text-[#7c6d14]">
-                            توجد أصناف صالة مخفية في الطلب ولا تحتاج إلى عرض في المطبخ.
+                            توجد أصناف أخرى (باريستا أو صالة) مخفية من هذا العرض.
                           </div>
                         )}
                       </div>
@@ -719,7 +784,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
                       <div className="flex items-center gap-2 mt-2">
                         {nextAction && (
                           <Button
-                            onClick={() => updateOrderStatus(order.id, nextAction.status)}
+                            onClick={() => updateKitchenStatus(order.id, nextAction.nextSubStatus)}
                             disabled={isUpdating}
                             className={`flex-1 gap-2 h-10 md:h-12 text-sm md:text-base font-bold rounded-lg ${nextAction.color} transition-all active:scale-95`}
                           >
@@ -735,7 +800,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
                           variant="outline"
                           size="sm"
                           disabled={isUpdating}
-                          onClick={() => updateOrderStatus(order.id, 'CANCELLED')}
+                          onClick={() => updateKitchenStatus(order.id, 'CANCELLED')}
                           className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 h-10 md:h-12 px-3 md:px-4 text-sm"
                         >
                           <XCircle className="h-4 w-4" />

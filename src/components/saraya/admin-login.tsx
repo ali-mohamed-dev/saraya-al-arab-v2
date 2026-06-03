@@ -17,6 +17,7 @@ const ROLE_LABELS: Record<string, string> = {
   WAITER: 'ويتر',
   CASHIER: 'كاشير',
   KITCHEN: 'مطبخ',
+  BARISTA: 'باريستا',
 }
 
 export function AdminLogin({ onLogin }: AdminLoginProps) {
@@ -149,6 +150,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 <p className="text-xs text-muted-foreground">ويتر: waiter / waiter123</p>
                 <p className="text-xs text-muted-foreground">كاشير: cashier / cashier123</p>
                 <p className="text-xs text-muted-foreground">مطبخ: kitchen / kitchen123</p>
+                <p className="text-xs text-muted-foreground">باريستا: barista / barista123</p>
               </div>
             </form>
           </CardContent>
