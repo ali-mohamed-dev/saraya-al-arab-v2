@@ -10,7 +10,7 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
-    const existing = await db.mealAddOn.findUnique({ where: { id } })
+    const existing = await db.addOn.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: 'Add-on not found' }, { status: 404 })
     }
@@ -23,7 +23,7 @@ export async function PUT(
     if (body.isRecommended !== undefined) updateData.isRecommended = body.isRecommended
     if (body.isActive !== undefined) updateData.isActive = body.isActive
 
-    const addon = await db.mealAddOn.update({
+    const addon = await db.addOn.update({
       where: { id },
       data: updateData,
     })
@@ -43,12 +43,12 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    const existing = await db.mealAddOn.findUnique({ where: { id } })
+    const existing = await db.addOn.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: 'Add-on not found' }, { status: 404 })
     }
 
-    await db.mealAddOn.delete({ where: { id } })
+    await db.addOn.delete({ where: { id } })
 
     return NextResponse.json({ message: 'Add-on deleted successfully' })
   } catch (error) {

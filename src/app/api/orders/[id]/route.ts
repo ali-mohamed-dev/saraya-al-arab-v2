@@ -132,15 +132,30 @@ export async function PUT(
       )
     }
 
-    const finalItems = await db.orderItem.findMany({ where: { orderId: id } })
-    const finalSubtotal = finalItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
-    const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
-    const finalServiceCharge = Math.round(finalSubtotal * ratio * 100) / 100
-    const finalTotal = finalSubtotal + finalServiceCharge
+    // Only recalculate totals if items were modified in this request
+    const itemsWereModified =
+      (Array.isArray(body.itemsToAdd) && body.itemsToAdd.length > 0) ||
+      (Array.isArray(body.removedItemIds) && body.removedItemIds.length > 0) ||
+      (Array.isArray(body.itemUpdates) && body.itemUpdates.length > 0)
 
-    updateData.subtotal = finalSubtotal
-    updateData.serviceCharge = finalServiceCharge
-    updateData.total = finalTotal
+    if (itemsWereModified) {
+      const finalItems = await db.orderItem.findMany({ where: { orderId: id } })
+      // Include addOns prices stored as JSON in each item's price field (addOns are baked into item.price)
+      const finalSubtotal = finalItems.reduce((sum, item) => {
+        let addOnsTotal = 0
+        try {
+          const addOns = typeof item.addOns === 'string' ? JSON.parse(item.addOns) : []
+          addOnsTotal = Array.isArray(addOns) ? addOns.reduce((s: number, a: { price?: number }) => s + (a.price || 0), 0) : 0
+        } catch { /* ignore malformed addOns */ }
+        return sum + (item.price + addOnsTotal) * item.quantity
+      }, 0)
+      const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
+      const finalServiceCharge = Math.round(finalSubtotal * ratio * 100) / 100
+      updateData.subtotal = finalSubtotal
+      updateData.serviceCharge = finalServiceCharge
+      updateData.total = finalSubtotal + finalServiceCharge
+    }
+    // If no items changed, preserve existing subtotal/serviceCharge/total (don't overwrite)
 
     const order = await db.order.update({
       where: { id },
@@ -162,7 +177,8 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const payload = await request.json()
+    // FIX: DELETE requests may have no body — use .catch to avoid parse errors
+    const payload = await request.json().catch(() => ({}))
 
     const existing = await db.order.findUnique({ where: { id } })
     if (!existing) {

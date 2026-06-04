@@ -1,129 +1,191 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 model Admin {
   id        String   @id @default(cuid())
   username  String   @unique
   password  String
-  role      String   @default("ADMIN") // ADMIN, WAITER, CASHIER, KITCHEN
+  role      String   @default("ADMIN") // ADMIN, WAITER, CASHIER, KITCHEN, BARISTA
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Meal {
-  id            String   @id @default(cuid())
-  title         String
-  titleAr       String   @default("")
-  description   String   @default("")
-  descriptionAr String   @default("")
-  price         Float
-  prepTime      String   @default("15 دقيقة")
-  category      String   @default("مشويات")
-  categoryAr    String   @default("")
-  preparationArea String @default("KITCHEN")
-  imageUrl      String   @default("")
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String          @id @default(cuid())
+  title           String
+  titleAr         String          @default("")
+  description     String          @default("")
+  descriptionAr   String          @default("")
+  price           Float
+  prepTime        String          @default("15 دقيقة")
+  category        String          @default("مشويات")
+  categoryAr      String          @default("")
+  preparationArea String          @default("KITCHEN") // KITCHEN, BARISTA, HALL
+  imageUrl        String          @default("")
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  addons          AddOn[]
+  orderItems      OrderItem[]
+  promotionMeals  PromotionMeal[]  
+
 }
 
-model Promotion {
-  id             String   @id @default(cuid())
-  bannerImageUrl String
-  title          String   @default("")
-  titleAr        String   @default("")
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-model MealAddOn {
+model AddOn {
   id            String   @id @default(cuid())
   mealId        String
   title         String
   titleAr       String   @default("")
-  price         Float
+  price         Float    @default(0)
   imageUrl      String   @default("")
   isRecommended Boolean  @default(false)
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  meal          Meal     @relation(fields: [mealId], references: [id], onDelete: Cascade)
+
+  @@index([mealId])
+}
+
+model Promotion {
+  id             String        @id @default(cuid())
+  bannerImageUrl String
+  title          String        @default("")
+  titleAr        String        @default("")
+  description    String        @default("")
+  descriptionAr  String        @default("")
+  price          Float         @default(0)        // السعر بعد الخصم
+  oldPrice       Float         @default(0)        // السعر الأصلي قبل الخصم
+  discount       Int           @default(0)        // نسبة الخصم المئوية (اختياري)
+  buttonText     String        @default("")
+  buttonTextAr   String        @default("")
+  buttonLink     String        @default("")
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  mealItems      PromotionMeal[] // الوجبات المرتبطة بالعرض
+
+}
+
+model PromotionMeal {
+  id          String    @id @default(cuid())
+  promotionId String
+  mealId      String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  meal        Meal      @relation(fields: [mealId], references: [id])
+
+  @@unique([promotionId, mealId])
+  @@index([promotionId])
+  @@index([mealId])
+}
+
+model Shift {
+  id            String    @id @default(cuid())
+  status        String    @default("OPEN")
+  startedBy     String?
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  endedBy       String?
+  notes         String?
+  totalRevenue  Float     @default(0)
+  totalExpenses Float     @default(0)
+  netRevenue    Float     @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  orders   Order[]
+  expenses Expense[]
 }
 
 model Order {
   id              String      @id @default(cuid())
   orderNumber     Int         @unique
-  type            String      // DINE_IN, TAKEAWAY, DELIVERY
-  status          String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, DELIVERED, CANCELLED
+  type            String      @default("DINE_IN") // DINE_IN, TAKEAWAY, DELIVERY
+  status          String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, READY_TO_PAY, DELIVERED, CANCELLED
   customerName    String      @default("")
   customerPhone   String      @default("")
   deliveryAddress String      @default("")
   tableNumber     String      @default("")
   pickupTime      String      @default("")
-  notes           String      @default("")
-  cancelledBy     String      @default("")
-  subtotal        Float
+  subtotal        Float       @default(0)
   serviceCharge   Float       @default(0)
-  total           Float
-  shiftId         String      @default("")
-  kitchenStatus   String      @default("PENDING")
+  total           Float       @default(0)
+  kitchenAccess   Boolean     @default(false)
+  kitchenStatus   String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, CANCELLED
   baristaStatus   String      @default("PENDING")
-  kitchenAccess   Boolean     @default(false) // تم إضافة هذا الحقل
+  notes           String      @default("")
+  cancelledBy     String?
+  shiftId         String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
+  shift           Shift?      @relation(fields: [shiftId], references: [id])
   items           OrderItem[]
+
+  @@index([status])
+  @@index([shiftId])
+  @@index([createdAt])
 }
 
 model OrderItem {
-  id          String   @id @default(cuid())
-  orderId     String
-  mealId      String
-  mealTitle   String
-  mealTitleAr String
-  price       Float
-  quantity    Int
-  addOns      String   @default("[]") // JSON array of {id, title, titleAr, price}
-  category    String   @default("")
-  preparationArea String @default("KITCHEN")
-  imageUrl    String   @default("")
-  lastAddedQuantity Int @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  orderId           String
+  mealId            String
+  mealTitle         String
+  mealTitleAr       String   @default("")
+  quantity          Int      @default(1)
+  price             Float
+  preparationArea   String   @default("KITCHEN")
+  imageUrl          String   @default("")
+  addOns            String   @default("[]") // JSON string of add-ons
+  category          String   @default("")
+  lastAddedQuantity Int      @default(0)
+  addedQuantity     Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  meal              Meal     @relation(fields: [mealId], references: [id])
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@index([orderId])
+  @@index([mealId])
 }
 
 model Expense {
-  id        String   @id @default(cuid())
-  title     String
-  amount    Float
-  category  String   @default("عام")
-  shiftId   String   @default("")
-  addedBy   String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  category    String
+  description String
+  amount      Float
+  shiftId     String?
+  createdBy   String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shift       Shift?   @relation(fields: [shiftId], references: [id])
+
+  @@index([shiftId])
 }
 
-model Shift {
-  id            String    @id @default(cuid())
-  startedAt     DateTime  @default(now())
-  endedAt       DateTime?
-  startedBy     String
-  endedBy       String    @default("")
-  totalRevenue  Float     @default(0)
-  totalExpenses Float     @default(0)
-  netRevenue    Float     @default(0)
-  status        String    @default("OPEN") // OPEN, CLOSED
-  notes         String    @default("")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+model RestaurantTable {
+  id         String   @id @default(cuid())
+  number     Int      @unique
+  name       String   @default("") // اسم اختياري زي "طاولة 5 - VIP"
+  secretCode String   @unique // كود سري 6 خانات لكل طاولة
+  seats      Int      @default(4) // عدد الكراسي
+  area       String   @default("صالة رئيسية") // المنطقة
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model StoreSettings {
+  id          String   @id @default("default")
+  takingOrders Boolean @default(true)  // المطعم يستقبل طلبات أم لا
+  message     String   @default("المطعم مغلق حالياً، لا يمكن استقبال الطلبات")
+  updatedAt   DateTime @updatedAt
 }

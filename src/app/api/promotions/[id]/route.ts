@@ -17,13 +17,35 @@ export async function PUT(
 
     const updateData: Record<string, unknown> = {}
     if (body.bannerImageUrl !== undefined) updateData.bannerImageUrl = body.bannerImageUrl
-    if (body.title !== undefined) updateData.title = body.title
-    if (body.titleAr !== undefined) updateData.titleAr = body.titleAr
-    if (body.isActive !== undefined) updateData.isActive = body.isActive
+    if (body.title          !== undefined) updateData.title          = body.title
+    if (body.titleAr        !== undefined) updateData.titleAr        = body.titleAr
+    if (body.description    !== undefined) updateData.description    = body.description
+    if (body.descriptionAr  !== undefined) updateData.descriptionAr  = body.descriptionAr
+    if (body.price          !== undefined) updateData.price          = parseFloat(body.price)
+    if (body.oldPrice       !== undefined) updateData.oldPrice       = parseFloat(body.oldPrice)
+    if (body.discount       !== undefined) updateData.discount       = parseInt(body.discount)
+    if (body.buttonText     !== undefined) updateData.buttonText     = body.buttonText
+    if (body.buttonTextAr   !== undefined) updateData.buttonTextAr   = body.buttonTextAr
+    if (body.buttonLink     !== undefined) updateData.buttonLink     = body.buttonLink
+    if (body.isActive       !== undefined) updateData.isActive       = body.isActive
+
+    // تحديث الوجبات المرتبطة إذا تم إرسال mealIds
+    if (Array.isArray(body.mealIds)) {
+      await db.promotionMeal.deleteMany({ where: { promotionId: id } })
+      if (body.mealIds.length > 0) {
+        await db.promotionMeal.createMany({
+          data: [...new Set<string>(body.mealIds)].map((mealId) => ({ promotionId: id, mealId })),
+          skipDuplicates: true,
+        })
+      }
+    }
 
     const promotion = await db.promotion.update({
       where: { id },
       data: updateData,
+      include: {
+        mealItems: { include: { meal: true } },
+      },
     })
 
     return NextResponse.json(promotion)

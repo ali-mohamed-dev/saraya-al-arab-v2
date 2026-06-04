@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const mealId = searchParams.get('mealId')
 
     const where = mealId ? { mealId } : {}
-    const addons = await db.mealAddOn.findMany({
+    const addons = await db.addOn.findMany({
       where,
       orderBy: { createdAt: 'desc' },
     })
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'mealId, title, and price are required' }, { status: 400 })
     }
 
-    const addon = await db.mealAddOn.create({
+    const addon = await db.addOn.create({
       data: {
         mealId,
         title,

@@ -12,7 +12,7 @@ export async function GET(
     const { id } = await params
     const isAdmin = request.nextUrl.searchParams.get('admin') === 'true'
 
-    const addons = await db.mealAddOn.findMany({
+    const addons = await db.addOn.findMany({
       where: isAdmin ? { mealId: id } : { mealId: id, isActive: true },
       orderBy: { isRecommended: 'desc' },
     })

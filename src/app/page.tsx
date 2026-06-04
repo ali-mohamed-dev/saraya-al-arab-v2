@@ -1,59 +1,15 @@
 'use client'
 
-import { useState, useEffect, ComponentType } from 'react'
-import { ClientMenu } from '@/components/saraya/client-menu'
+import { useState, useEffect } from 'react'
+import { ClientMenu } from '@/components/saraya/client/client-menu'
 import { AdminLogin } from '@/components/saraya/admin-login'
-import { AdminPanel } from '@/components/saraya/admin-panel'
-import { WaiterPanel } from '@/components/saraya/waiter-panel'
-import { CashierPanel } from '@/components/saraya/cashier-panel'
-import { KitchenPanel } from '@/components/saraya/kitchen-panel'
-import { BaristaPanel } from '@/components/saraya/barista-panel'
-import { Button } from '@/components/ui/button'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { AdminPanel } from '@/components/saraya/admin/admin-panel'
+import { WaiterPanel } from '@/components/saraya/waiter/waiter-panel'
+import { CashierPanel } from '@/components/saraya/cashier/cashier-panel'
+import { KitchenPanel } from '@/components/saraya/kitchen/kitchen-panel'
+import { BaristaPanel } from '@/components/saraya/barista/barista-panel'
 
-type View = 'menu' | 'staff-login' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel' | 'barista-panel'
-
-// Error boundary wrapper to prevent full-page crashes
-function withErrorBoundary<P extends object>(Component: ComponentType<P>, fallbackView: string, onViewChange: (view: string) => void) {
-  return function ErrorBoundaryWrapper(props: P) {
-    const [hasError, setHasError] = useState(false)
-
-    useEffect(() => {
-      setHasError(false)
-    }, [Component])
-
-    if (hasError) {
-      return (
-        <div className="flex min-h-screen items-center justify-center bg-background p-8" dir="rtl">
-          <div className="text-center space-y-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10 mx-auto">
-              <AlertTriangle className="h-8 w-8 text-red-400" />
-            </div>
-            <h2 className="text-xl font-bold text-foreground">حدث خطأ غير متوقع</h2>
-            <p className="text-muted-foreground">يرجى تحديث الصفحة والمحاولة مرة أخرى</p>
-            <div className="flex gap-3 justify-center">
-              <Button onClick={() => { setHasError(false); onViewChange('menu') }} variant="outline" className="gap-2">
-                العودة للقائمة
-              </Button>
-              <Button onClick={() => setHasError(false)} className="gap-2 bg-[#D4AF37] text-black hover:bg-[#C9A431]">
-                <RefreshCw className="h-4 w-4" />
-                إعادة المحاولة
-              </Button>
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    try {
-      return <Component {...props} />
-    } catch (error) {
-      console.error('Component error:', error)
-      setHasError(true)
-      return null
-    }
-  }
-}
+type View = 'menu' | 'staff-login' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel' | 'barista-panel' | 'loading'
 
 function getViewForRole(role: string): View {
   switch (role) {
@@ -66,18 +22,20 @@ function getViewForRole(role: string): View {
   }
 }
 
-function getInitialView(): View {
-  const authStatus = sessionStorage.getItem('saraya-admin-auth')
-  const savedRole = sessionStorage.getItem('saraya-staff-role')
-  if (authStatus === 'true' && savedRole) return getViewForRole(savedRole)
-  return 'menu'
-}
-
 export default function Home() {
-  const [view, setView] = useState<View>('menu')
+  // Always start with 'loading' to avoid hydration mismatch.
+  // Server renders nothing visible, client then reads sessionStorage in useEffect
+  // and sets the correct view — same HTML on both sides.
+  const [view, setView] = useState<View>('loading')
 
   useEffect(() => {
-    setView(getInitialView())
+    const authStatus = sessionStorage.getItem('saraya-admin-auth')
+    const savedRole = sessionStorage.getItem('saraya-staff-role')
+    if (authStatus === 'true' && savedRole) {
+      setView(getViewForRole(savedRole))
+    } else {
+      setView('menu')
+    }
   }, [])
 
   const handleAdminClick = () => {
@@ -104,8 +62,13 @@ export default function Home() {
     setView('menu')
   }
 
-  const handleBackToMenu = () => {
-    setView('menu')
+  // While checking auth state, show nothing (prevents hydration mismatch)
+  if (view === 'loading') {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#D4AF37] border-t-transparent" />
+      </div>
+    )
   }
 
   switch (view) {

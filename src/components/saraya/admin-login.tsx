@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ThemeToggle } from '@/components/saraya/shared/theme-toggle'
 
 interface AdminLoginProps {
   onLogin: (role: string, username: string) => void
@@ -58,6 +59,10 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      {/* Theme toggle in top corner */}
+      <div className="fixed top-4 left-4 z-50">
+        <ThemeToggle />
+      </div>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -144,13 +149,14 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 تسجيل الدخول
               </Button>
 
+              {/* Demo account info - role names only, no passwords */}
               <div className="rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5 p-3 space-y-1" dir="rtl">
-                <p className="text-xs font-semibold text-[#D4AF37]">الحسابات التجريبية:</p>
-                <p className="text-xs text-muted-foreground">مدير: admin / saraya2024</p>
-                <p className="text-xs text-muted-foreground">ويتر: waiter / waiter123</p>
-                <p className="text-xs text-muted-foreground">كاشير: cashier / cashier123</p>
-                <p className="text-xs text-muted-foreground">مطبخ: kitchen / kitchen123</p>
-                <p className="text-xs text-muted-foreground">باريستا: barista / barista123</p>
+                <p className="text-xs font-semibold text-[#D4AF37]">الأدوار المتاحة:</p>
+                {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                  <p key={key} className="text-xs text-muted-foreground">
+                    {label} ({key.toLowerCase()})
+                  </p>
+                ))}
               </div>
             </form>
           </CardContent>

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { checkIpRateLimit, checkPhoneRateLimit, checkMinOrderValue, getMinOrderValue } from '@/lib/saraya/rate-limit'
 
 // GET /api/orders - List all orders with items
 // Query params: ?status=PENDING, ?type=DINE_IN
@@ -10,12 +11,14 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type')
     const kitchenAccess = searchParams.get('kitchenAccess')
     const shiftId = searchParams.get('shiftId')
+    const customerPhone = searchParams.get('customerPhone')
 
     const where: any = {}
     if (status) where.status = status
     if (type) where.type = type
     if (shiftId) where.shiftId = shiftId
     if (kitchenAccess !== null) where.kitchenAccess = kitchenAccess === 'true'
+    if (customerPhone) where.customerPhone = customerPhone
 
     const orders = await db.order.findMany({
       where,
@@ -40,6 +43,7 @@ export async function POST(request: NextRequest) {
       customerPhone,
       deliveryAddress,
       tableNumber,
+      tableCode,
       pickupTime,
       notes,
       items,
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
       shiftId,
     } = body
 
+    // ─── Validation ──────────────────────────────────────────
     if (!type || !items || items.length === 0) {
       return NextResponse.json(
         { error: 'Order type and items are required' },
@@ -56,149 +61,270 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (type === 'DINE_IN' && tableNumber) {
-  const existingOrder = await db.order.findFirst({
-    where: {
-      tableNumber: tableNumber,
-      status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
-    },
-    include: { items: true },
-  })
-
-  if (existingOrder) {
-    type IncomingItem = {
-      mealId: string
-      mealTitle: string
-      mealTitleAr: string
-      price: number
-      quantity: number
-      addOns: string
-      category: string
-      preparationArea: string
-      imageUrl: string
+    // 0a) Check store settings (taking orders toggle)
+    const storeSettings = await db.storeSettings.findUnique({ where: { id: 'default' } })
+    if (storeSettings && !storeSettings.takingOrders) {
+      return NextResponse.json(
+        { error: storeSettings.message || 'المطعم مغلق حالياً، لا يمكن استقبال الطلبات' },
+        { status: 503 }
+      )
     }
 
-    const existingItems = existingOrder.items as unknown as Array<{
-      id: string
-      mealId: string
-      category: string
-      addOns: string
-      quantity: number
-    }>
-
-    const itemUpdates: Array<Promise<unknown>> = []
-    const createData: Array<{
-      orderId: string
-      mealId: string
-      mealTitle: string
-      mealTitleAr: string
-      price: number
-      quantity: number
-      addOns: string
-      preparationArea: string
-      category: string
-      imageUrl: string
-      lastAddedQuantity: number
-    }> = []
-
-    const normalizedIncomingItems: IncomingItem[] = items.map((item: any) => ({
-      mealId: item.mealId,
-      mealTitle: item.mealTitle,
-      mealTitleAr: item.mealTitleAr || '',
-      price: parseFloat(String(item.price)) || 0,
-      quantity: parseInt(String(item.quantity)) || 1,
-      addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
-      preparationArea: item.preparationArea || 'KITCHEN',
-      category: (item.category || '').trim(),
-      imageUrl: item.imageUrl || '',
-    }))
-
-    const mergedIncomingItems: IncomingItem[] = Object.values(
-      normalizedIncomingItems.reduce((acc, item) => {
-        const key = `${item.mealId}|${item.category}|${item.addOns}`
-        if (!acc[key]) acc[key] = { ...item }
-        else acc[key].quantity += item.quantity
-        return acc
-      }, {} as Record<string, IncomingItem>)
-    )
-
-    mergedIncomingItems.forEach((item) => {
-      const existingItem = existingItems.find((existingItem) =>
-        existingItem.mealId === item.mealId &&
-        existingItem.category === item.category &&
-        existingItem.addOns === item.addOns
+    // 0b) Check if there's an open shift
+    const openShift = await db.shift.findFirst({
+      where: { status: 'OPEN' },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!openShift) {
+      return NextResponse.json(
+        { error: 'المطعم مغلق حالياً. لا يمكن استقبال الطلبات بدون شيفت مفتوح.' },
+        { status: 400 }
       )
+    }
 
-      if (existingItem) {
-        itemUpdates.push(db.orderItem.update({
-          where: { id: existingItem.id },
-          data: {
-            quantity: existingItem.quantity + item.quantity,
-            lastAddedQuantity: item.quantity,
-          },
-        }))
-      } else {
-        createData.push({
-          orderId: existingOrder.id,
+    // 1) Minimum order value
+    const orderTotal = parseFloat(String(total)) || 0
+    const minCheck = checkMinOrderValue(orderTotal)
+    if (!minCheck.allowed) {
+      return NextResponse.json(
+        { error: `الحد الأدنى للطلب ${getMinOrderValue()} جنيه` },
+        { status: 400 }
+      )
+    }
+
+    // 2) IP Rate Limiting
+    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+    const ipCheck = checkIpRateLimit(clientIp)
+    if (!ipCheck.allowed) {
+      const retryMin = Math.ceil((ipCheck.retryAfterMs || 0) / 60000)
+      return NextResponse.json(
+        { error: `تم تجاوز الحد المسموح من الطلبات. حاول مرة أخرى بعد ${retryMin} دقيقة` },
+        { status: 429 }
+      )
+    }
+
+    // 3) Phone Rate Limiting moved below validations to avoid consuming slot on invalid requests
+
+    // 4) DINE_IN: Validate table code
+    if (type === 'DINE_IN' && tableNumber) {
+      if (!tableCode) {
+        return NextResponse.json(
+          { error: 'كود الطاولة مطلوب للطلب في الصالة' },
+          { status: 400 }
+        )
+      }
+      const table = await db.restaurantTable.findFirst({
+        where: {
+          number: parseInt(String(tableNumber)),
+          secretCode: String(tableCode).toUpperCase(),
+          isActive: true,
+        },
+      })
+      if (!table) {
+        return NextResponse.json(
+          { error: 'كود الطاولة غير صحيح. يرجى مسح QR code الموجود على الطاولة.' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // 5) TAKEAWAY: Require phone
+    if (type === 'TAKEAWAY' && !customerPhone) {
+      return NextResponse.json(
+        { error: 'رقم الهاتف مطلوب لطلبات التيك أواي' },
+        { status: 400 }
+      )
+    }
+
+    // 6) DELIVERY: Require phone + address
+    if (type === 'DELIVERY') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'رقم الهاتف مطلوب لطلبات الديليفري' },
+          { status: 400 }
+        )
+      }
+      if (!deliveryAddress || deliveryAddress.trim().length < 5) {
+        return NextResponse.json(
+          { error: 'العنوان مطلوب لطلبات الديليفري' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // 3) Phone Rate Limiting (for takeaway & delivery) — placed after all validations
+    // FIX: was before table code validation, which consumed a rate-limit slot even when order failed
+    if (customerPhone && type !== 'DINE_IN') {
+      const activeOrdersForPhone = await db.order.count({
+        where: {
+          customerPhone,
+          status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
+        },
+      })
+      if (activeOrdersForPhone >= 3) {
+        return NextResponse.json(
+          { error: 'لديك طلبات نشطة كثيرة بالفعل. يرجى الانتظار حتى يتم معالجتها.' },
+          { status: 429 }
+        )
+      }
+
+      const phoneCheck = checkPhoneRateLimit(customerPhone)
+      if (!phoneCheck.allowed) {
+        return NextResponse.json(
+          { error: phoneCheck.reason || 'يرجى الانتظار قبل تقديم طلب جديد' },
+          { status: 429 }
+        )
+      }
+    }
+
+    // ─── Existing DINE_IN order merge logic ──────────────
+    if (type === 'DINE_IN' && tableNumber) {
+      const existingOrder = await db.order.findFirst({
+        where: {
+          tableNumber: tableNumber,
+          status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
+        },
+        include: { items: true },
+      })
+
+      if (existingOrder) {
+        type IncomingItem = {
+          mealId: string
+          mealTitle: string
+          mealTitleAr: string
+          price: number
+          quantity: number
+          addOns: string
+          category: string
+          preparationArea: string
+          imageUrl: string
+        }
+
+        const existingItems = existingOrder.items as unknown as Array<{
+          id: string
+          mealId: string
+          category: string
+          addOns: string
+          quantity: number
+        }>
+
+        const itemUpdates: Array<Promise<unknown>> = []
+        const createData: Array<{
+          orderId: string
+          mealId: string
+          mealTitle: string
+          mealTitleAr: string
+          price: number
+          quantity: number
+          addOns: string
+          preparationArea: string
+          category: string
+          imageUrl: string
+          lastAddedQuantity: number
+        }> = []
+
+        const normalizedIncomingItems: IncomingItem[] = items.map((item: any) => ({
           mealId: item.mealId,
           mealTitle: item.mealTitle,
-          mealTitleAr: item.mealTitleAr,
-          price: item.price,
-          quantity: item.quantity,
-          addOns: item.addOns,
-          category: item.category,
-          preparationArea: item.preparationArea,
-          imageUrl: item.imageUrl,
-          lastAddedQuantity: item.quantity,
-        })
-      }
-    })
+          mealTitleAr: item.mealTitleAr || '',
+          price: parseFloat(String(item.price)) || 0,
+          quantity: parseInt(String(item.quantity)) || 1,
+          addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+          preparationArea: item.preparationArea || 'KITCHEN',
+          category: (item.category || '').trim(),
+          imageUrl: item.imageUrl || '',
+        }))
 
-    await Promise.all(itemUpdates)
-    if (createData.length > 0) {
-      await db.orderItem.createMany({ data: createData })
+        const mergedIncomingItems: IncomingItem[] = Object.values(
+          normalizedIncomingItems.reduce((acc, item) => {
+            const key = `${item.mealId}|${item.category}|${item.addOns}`
+            if (!acc[key]) acc[key] = { ...item }
+            else acc[key].quantity += item.quantity
+            return acc
+          }, {} as Record<string, IncomingItem>)
+        )
+
+        mergedIncomingItems.forEach((item) => {
+          const existingItem = existingItems.find((ei) =>
+            ei.mealId === item.mealId &&
+            ei.category === item.category &&
+            ei.addOns === item.addOns
+          )
+
+          if (existingItem) {
+            itemUpdates.push(db.orderItem.update({
+              where: { id: existingItem.id },
+              data: {
+                quantity: existingItem.quantity + item.quantity,
+                lastAddedQuantity: item.quantity,
+              },
+            }))
+          } else {
+            createData.push({
+              orderId: existingOrder.id,
+              mealId: item.mealId,
+              mealTitle: item.mealTitle,
+              mealTitleAr: item.mealTitleAr,
+              price: item.price,
+              quantity: item.quantity,
+              addOns: item.addOns,
+              category: item.category,
+              preparationArea: item.preparationArea,
+              imageUrl: item.imageUrl,
+              lastAddedQuantity: item.quantity,
+            })
+          }
+        })
+
+        await Promise.all(itemUpdates)
+        if (createData.length > 0) {
+          await db.orderItem.createMany({ data: createData })
+        }
+
+        const hasNewKitchenItems = normalizedIncomingItems.some(i => i.preparationArea === 'KITCHEN')
+        const hasNewBaristaItems = normalizedIncomingItems.some(i => i.preparationArea === 'BARISTA')
+        const needsNewPreparation = hasNewKitchenItems || hasNewBaristaItems
+
+        const updatedOrder = await db.order.update({
+          where: { id: existingOrder.id },
+          data: {
+            subtotal: existingOrder.subtotal + parseFloat(subtotal),
+            serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
+            total: existingOrder.total + parseFloat(total),
+            notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
+            status: needsNewPreparation && (existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY')
+              ? 'PREPARING'
+              : existingOrder.status,
+            // FIX: preserve kitchenAccess=true if already granted; new items need kitchen to see them
+            kitchenAccess: existingOrder.kitchenAccess || (hasNewKitchenItems || hasNewBaristaItems),
+            kitchenStatus: hasNewKitchenItems ? 'PENDING' : existingOrder.kitchenStatus,
+            baristaStatus: hasNewBaristaItems ? 'PENDING' : existingOrder.baristaStatus,
+          },
+          include: { items: true },
+        })
+
+        return NextResponse.json(updatedOrder, { status: 200 })
+      }
     }
 
-    // فحص هل الأصناف المضافة تحتاج تحضير أم هي أصناف صالة فقط (مثل المية)
-    const hasNewKitchenItems = normalizedIncomingItems.some(i => i.preparationArea === 'KITCHEN')
-    const hasNewBaristaItems = normalizedIncomingItems.some(i => i.preparationArea === 'BARISTA')
-    const needsNewPreparation = hasNewKitchenItems || hasNewBaristaItems
+    // ─── Create New Order ─────────────────────────────────
+    // Retry loop handles the race condition where two concurrent requests
+    // read the same max orderNumber and both try to insert the same value.
+    let order
+    let attempts = 0
+    while (attempts < 5) {
+      attempts++
+      const maxOrder = await db.order.findFirst({
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      })
+      const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1001
 
-    const updatedOrder = await db.order.update({
-      where: { id: existingOrder.id },
-      data: {
-        subtotal: existingOrder.subtotal + parseFloat(subtotal),
-        serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
-        total: existingOrder.total + parseFloat(total),
-        notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
-        // نغير الحالة لـ PREPARING فقط لو فيه أصناف مطبخ أو باريستا جديدة
-        status: needsNewPreparation && (existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY') 
-          ? 'PREPARING' 
-          : existingOrder.status,
-        // نصفر حالة القسم المحتاج تحضير فقط، ونحافظ على حالة القسم التاني زي ما هي
-        kitchenStatus: hasNewKitchenItems ? 'PENDING' : existingOrder.kitchenStatus,
-        baristaStatus: hasNewBaristaItems ? 'PENDING' : existingOrder.baristaStatus,
-      },
-      include: { items: true },
-    })
-
-    return NextResponse.json(updatedOrder, { status: 200 })
-  }
-}
-
-
-    // Get max orderNumber and increment
-    const maxOrder = await db.order.findFirst({
-      orderBy: { orderNumber: 'desc' },
-      select: { orderNumber: true },
-    })
-    const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1001
-
-    const order = await db.order.create({
-      data: {
+      const orderData: any = {
         orderNumber,
         type,
-        shiftId: shiftId || '',
         customerName: customerName || '',
         customerPhone: customerPhone || '',
         deliveryAddress: deliveryAddress || '',
@@ -211,7 +337,8 @@ export async function POST(request: NextRequest) {
         status: 'PENDING',
         kitchenStatus: 'PENDING',
         baristaStatus: 'PENDING',
-        kitchenAccess: false,
+        kitchenAccess: false, // Staff must confirm before kitchen sees it
+        shiftId: shiftId || openShift.id,
         items: {
           create: items.map(
             (item: {
@@ -237,9 +364,24 @@ export async function POST(request: NextRequest) {
             })
           ),
         },
-      },
-      include: { items: true },
-    })
+      }
+
+      try {
+        order = await db.order.create({
+          data: orderData,
+          include: { items: true },
+        })
+        break // success
+      } catch (createErr: any) {
+        // P2002 = unique constraint violation (duplicate orderNumber)
+        if (createErr?.code === 'P2002' && attempts < 5) continue
+        throw createErr
+      }
+    }
+
+    if (!order) {
+      return NextResponse.json({ error: 'Failed to generate unique order number' }, { status: 500 })
+    }
 
     return NextResponse.json(order, { status: 201 })
   } catch (error) {

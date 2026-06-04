@@ -8,10 +8,30 @@ export async function GET(request: NextRequest) {
     const current = searchParams.get('current')
 
     if (current === 'true') {
-      const shift = await db.shift.findFirst({
+      let shift = await db.shift.findFirst({
         where: { status: 'OPEN' },
         orderBy: { createdAt: 'desc' },
       })
+
+      // Auto-migrate legacy shifts with old status values ('active'/'closed')
+      if (!shift) {
+        const legacyOpen = await db.shift.findFirst({
+          where: { status: 'active' },
+          orderBy: { createdAt: 'desc' },
+        })
+        if (legacyOpen) {
+          shift = await db.shift.update({
+            where: { id: legacyOpen.id },
+            data: { status: 'OPEN' },
+          })
+          // Also fix all 'closed' shifts
+          await db.shift.updateMany({
+            where: { status: 'closed' },
+            data: { status: 'CLOSED' },
+          })
+        }
+      }
+
       return NextResponse.json(shift || null)
     }
 

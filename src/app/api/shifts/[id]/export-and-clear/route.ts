@@ -1,14 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-
-function csvEscape(value: string) {
-  const v = value ?? ''
-  return `"${String(v).replace(/"/g, '""')}"`
-}
-
-function toCSV(rows: string[][]) {
-  return rows.map((r) => r.map(csvEscape).join(',')).join('\n')
-}
+import { generateShiftExcel } from '@/lib/saraya/excel-export'
 
 export async function POST(
   request: NextRequest,
@@ -23,7 +15,6 @@ export async function POST(
   }
 
   try {
-    // Use a transaction to guarantee: export view is consistent + then clear data
     const result = await db.$transaction(async (tx) => {
       // Fetch shift orders
       const orders = await tx.order.findMany({
@@ -35,45 +26,29 @@ export async function POST(
         orderBy: { createdAt: 'desc' },
       })
 
-      const deliveredTotals = orders.reduce((sum, o) => sum + (o.total ?? 0), 0)
+      const deliveredOrders = orders.filter(o => o.status === 'DELIVERED')
+      const totalRevenue = deliveredOrders.reduce((sum, o) => sum + (o.total ?? 0), 0)
 
       // Expenses for shift
       const expenses = await tx.expense.findMany({
         where: { shiftId: id },
         orderBy: { createdAt: 'desc' },
       })
-      const expensesTotal = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
+      const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
+      const netRevenue = totalRevenue - totalExpenses
 
-      const netRevenue = deliveredTotals - expensesTotal
-
-      // Update shift (close)
+      // Close shift — use correct schema field names: endedAt / endedBy
       const shift = await tx.shift.update({
         where: { id },
         data: {
           status: 'CLOSED',
-          endedAt: new Date(),
-          endedBy: endedBy || '',
-          totalRevenue: deliveredTotals,
-          totalExpenses: expensesTotal,
-          netRevenue,
+          endedAt: new Date(),   // FIX: was closedAt (field doesn't exist in schema)
+          endedBy: endedBy || '', // FIX: was closedBy (field doesn't exist in schema)
           notes: notes || '',
         },
       })
 
-      const rows: string[][] = []
-      rows.push(['اسم المصروف', 'نوع المصروف', 'السعر'])
-      for (const e of expenses) {
-        rows.push([
-          e.title ?? '',
-          e.category ?? 'عام',
-          String(e.amount ?? 0),
-        ])
-      }
-      if (expenses.length === 0) {
-        rows.push(['(لا توجد مصاريف)', '', ''])
-      }
-
-      // Clear cashier/day data: delete orders and expenses for this shift.
+      // Clear orders and expenses for this shift
       const orderIds = orders.map((o) => o.id)
       if (orderIds.length > 0) {
         await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } })
@@ -88,24 +63,54 @@ export async function POST(
 
       await tx.expense.deleteMany({ where: { shiftId: id } })
 
-      return { csv: toCSV(rows), netRevenue, totalRevenue: deliveredTotals, totalExpenses: expensesTotal, shiftId: id }
+      return { shift, orders, expenses, netRevenue, totalRevenue, totalExpenses }
     })
 
-    const blob = new Blob(['\uFEFF' + result.csv], { type: 'text/csv;charset=utf-8;' })
-    // NextResponse cannot stream Blob from server the same way as browser.
-    // So return as plain text and let frontend convert to blob.
-    return NextResponse.json({
-      csv: result.csv,
-      totals: {
-        totalRevenue: result.totalRevenue,
-        totalExpenses: result.totalExpenses,
-        netRevenue: result.netRevenue,
+    // Generate Excel file
+    const xlsxBuffer = await generateShiftExcel({
+      shift: {
+        startedAt: result.shift.createdAt,
+        endedAt: result.shift.endedAt,   // FIX: was result.shift.closedAt
+        startedBy: result.shift.startedBy,
+        endedBy: result.shift.endedBy,   // FIX: was result.shift.closedBy
+        notes: result.shift.notes,
       },
-      shiftId: result.shiftId,
+      orders: result.orders.map((o) => ({
+        orderNumber: o.orderNumber ?? 0,
+        type: o.type,
+        status: o.status,
+        tableNumber: o.tableNumber,
+        total: o.total ?? 0,
+        customerName: o.customerName,
+        createdAt: o.createdAt,
+        items: o.items?.map((it) => ({
+          name: it.mealTitle,
+          qty: it.quantity,
+          price: it.price,
+        })),
+      })),
+      expenses: result.expenses.map((e) => ({
+        title: e.description ?? '',
+        amount: e.amount ?? 0,
+        category: e.category ?? 'عام',
+        addedBy: e.createdBy ?? '',
+        createdAt: e.createdAt,
+      })),
+      totalRevenue: result.totalRevenue,
+      totalExpenses: result.totalExpenses,
+      netRevenue: result.netRevenue,
+    })
+
+    // Return xlsx as binary response
+    return new NextResponse(new Uint8Array(xlsxBuffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="shift-${id.slice(0, 8)}.xlsx"`,
+      },
     })
   } catch (error) {
     console.error('export-and-clear error:', error)
     return NextResponse.json({ error: 'Failed to export and clear' }, { status: 500 })
   }
 }
-

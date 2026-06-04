@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { SERVICE_CHARGE_RATE } from '@/lib/saraya/constants'
 
 export interface SelectedAddOn {
   id: string
@@ -16,11 +17,13 @@ export interface CartItemType {
   quantity: number
   imageUrl: string
   addOns: SelectedAddOn[]
+  preparationArea: string  // FIX: was missing — caused all items to be sent to KITCHEN
+  category: string         // FIX: was missing — needed for order merge matching
 }
 
 interface CartStore {
   items: CartItemType[]
-  addItem: (item: Omit<CartItemType, 'quantity'> & { quantity?: number }) => void
+  addItem: (item: CartItemType) => void
   removeItem: (mealId: string, addOnKey: string) => void
   updateQuantity: (mealId: string, addOnKey: string, quantity: number) => void
   clearCart: () => void
@@ -44,7 +47,6 @@ export const useCartStore = create<CartStore>()(
       addItem: (item) =>
         set((state) => {
           const addOnKey = getAddOnKey(item.addOns)
-          const quantityToAdd = item.quantity ?? 1
           const existing = state.items.find(
             (i) => i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
           )
@@ -52,12 +54,12 @@ export const useCartStore = create<CartStore>()(
             return {
               items: state.items.map((i) =>
                 i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
-                  ? { ...i, quantity: i.quantity + quantityToAdd }
+                  ? { ...i, quantity: i.quantity + (item.quantity || 1) }
                   : i
               ),
             }
           }
-          return { items: [...state.items, { ...item, quantity: quantityToAdd }] }
+          return { items: [...state.items, { ...item, quantity: item.quantity || 1 }] }
         }),
       removeItem: (mealId, addOnKey) =>
         set((state) => ({
@@ -85,7 +87,7 @@ export const useCartStore = create<CartStore>()(
             const addOnTotal = item.addOns?.reduce((s, a) => s + a.price, 0) || 0
             return sum + (item.price + addOnTotal) * item.quantity
           }, 0)
-          return subtotal * 1.12 // 12% خدمة
+          return subtotal * (1 + SERVICE_CHARGE_RATE)
         },
     }),
     {

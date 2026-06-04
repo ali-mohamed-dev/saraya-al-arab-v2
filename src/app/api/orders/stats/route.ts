@@ -43,7 +43,7 @@ export async function GET(request: Request) {
           gte: startOfDay,
           lt: endOfDay,
         },
-        status: { not: 'CANCELLED' },
+        status: 'DELIVERED', // FIX: was { not: 'CANCELLED' } which inflated revenue with unpaid orders
         ...(shiftId ? { shiftId } : {}),
       },
     })

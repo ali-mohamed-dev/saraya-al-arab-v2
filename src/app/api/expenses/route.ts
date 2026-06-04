@@ -24,19 +24,23 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, amount, category, shiftId, addedBy } = body
+    // FIX: schema uses 'description' and 'createdBy', not 'title' and 'addedBy'
+    const { title, description, amount, category, shiftId, addedBy, createdBy } = body
 
-    if (!title || !amount) {
-      return NextResponse.json({ error: 'Title and amount are required' }, { status: 400 })
+    const resolvedDescription = description || title  // accept both for compatibility
+    const resolvedCreatedBy = createdBy || addedBy || ''
+
+    if (!resolvedDescription || !amount) {
+      return NextResponse.json({ error: 'Description and amount are required' }, { status: 400 })
     }
 
     const expense = await db.expense.create({
       data: {
-        title,
+        description: resolvedDescription,   // FIX: was 'title' (field doesn't exist in schema)
         amount: parseFloat(amount),
         category: category || 'عام',
-        shiftId: shiftId || '',
-        addedBy: addedBy || '',
+        shiftId: shiftId || null,
+        createdBy: resolvedCreatedBy,       // FIX: was 'addedBy' (field doesn't exist in schema)
       },
     })
 

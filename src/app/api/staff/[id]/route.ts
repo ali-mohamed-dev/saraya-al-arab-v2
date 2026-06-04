@@ -2,8 +2,9 @@ import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 // تعديل بيانات موظف
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     const body = await req.json()
     const { role, password } = body
     
@@ -22,7 +23,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     }
 
     const staff = await db.admin.update({
-      where: { id: params.id },
+      where: { id },
       data
     })
 
@@ -33,16 +34,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 // حذف موظف
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params
     // منع حذف حساب الأدمن الأساسي (اختياري لكن يفضل)
-    const target = await db.admin.findUnique({ where: { id: params.id } })
+    const target = await db.admin.findUnique({ where: { id } })
     if (target?.username === 'admin') {
       return NextResponse.json({ error: 'لا يمكن حذف حساب المدير الرئيسي' }, { status: 400 })
     }
 
     await db.admin.delete({
-      where: { id: params.id }
+      where: { id }
     })
     return NextResponse.json({ success: true })
   } catch (error) {
