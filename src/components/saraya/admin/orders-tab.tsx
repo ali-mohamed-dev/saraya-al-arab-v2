@@ -205,7 +205,7 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
         if (orderStatusFilter !== 'ALL') {
           setOrderStatusFilter('ALL')
         }
-        await fetchAllOrderData(currentShiftId ?? undefined)
+        await fetchAllOrderData()
       } else {
         const data = await res.json().catch(() => ({}))
         toast({ title: 'خطأ', description: (data as { error?: string }).error || 'فشل في تحديث الحالة', variant: 'destructive' })
@@ -297,13 +297,13 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
           typeFilter={orderTypeFilter}
           onStatusFilterChange={setOrderStatusFilter}
           onTypeFilterChange={setOrderTypeFilter}
-          onRefresh={() => fetchAllOrderData(currentShiftId ?? undefined)}
+          onRefresh={() => fetchAllOrderData()}
         />
         <div className="flex justify-end">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchAllOrderData(currentShiftId ?? undefined)}
+            onClick={() => fetchAllOrderData()}
             className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8"
           >
             <RefreshCw className="h-3 w-3" />
