@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Trash2, QrCode, RefreshCw, Loader2, Copy, Check, Armchair } from 'lucide-react'
+import { Plus, Trash2, QrCode, RefreshCw, Loader2, Copy, Check, Armchair, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import type { Order } from '@/lib/saraya/types'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from '@/components/ui/dialog'
@@ -26,6 +27,7 @@ interface TableItem {
 export function TableManagement() {
   const { toast } = useToast()
   const [tables, setTables] = useState<TableItem[]>([])
+  const [activeOrders, setActiveOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showQrDialog, setShowQrDialog] = useState(false)
@@ -50,7 +52,28 @@ export function TableManagement() {
     }
   }, [])
 
-  useEffect(() => { fetchTables() }, [fetchTables])
+  const fetchActiveOrders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/orders')
+      if (res.ok) {
+        const data = await res.json()
+        // الطاولة تعتبر مشغولة لو ليها أوردر مش (تم التسليم أو ملغي)
+        setActiveOrders(data.filter((o: any) => 
+          o.type === 'DINE_IN' && 
+          !['DELIVERED', 'CANCELLED'].includes(o.status)
+        ))
+      }
+    } catch (err) {
+      console.error('Failed to fetch active orders:', err)
+    }
+  }, [])
+
+  useEffect(() => { 
+    fetchTables()
+    fetchActiveOrders()
+    const interval = setInterval(fetchActiveOrders, 10000)
+    return () => clearInterval(interval)
+  }, [fetchTables, fetchActiveOrders])
 
   const addTable = async () => {
     if (!newNumber) return
@@ -178,12 +201,18 @@ export function TableManagement() {
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {tables.map(table => (
-            <Card key={table.id} className="border-border/40 bg-card hover:border-[#D4AF37]/30 transition-colors">
+          {tables.map(table => {
+            const tableOrders = activeOrders.filter(o => o.tableNumber === String(table.number))
+            const isOccupied = tableOrders.length > 0
+            
+            return (
+            <Card key={table.id} className={`border-border/40 bg-card transition-all ${isOccupied ? 'border-red-500/30' : 'hover:border-[#D4AF37]/30'}`}>
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#D4AF37]/10 font-bold text-[#D4AF37] text-lg">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg font-bold text-lg ${
+                      isOccupied ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-[#D4AF37]/10 text-[#D4AF37]'
+                    }`}>
                       {table.number}
                     </div>
                     <div>
@@ -191,9 +220,16 @@ export function TableManagement() {
                       <p className="text-xs text-muted-foreground">{table.area} • {table.seats} كراسي</p>
                     </div>
                   </div>
-                  <Badge className={table.isActive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}>
-                    {table.isActive ? 'نشطة' : 'معطلة'}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge className={table.isActive ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-muted text-muted-foreground'}>
+                      {table.isActive ? 'نشطة' : 'معطلة'}
+                    </Badge>
+                    {isOccupied && (
+                      <Badge className="bg-red-500/10 text-red-400 border-red-500/20 animate-pulse">
+                        مشغولة ({tableOrders.length})
+                      </Badge>
+                    )}
+                  </div>
                 </div>
 
                 {/* Secret Code */}
@@ -228,7 +264,7 @@ export function TableManagement() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+          )})}
         </div>
       )}
 

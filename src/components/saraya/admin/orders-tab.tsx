@@ -56,7 +56,6 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   // Fetch orders
   const fetchOrders = useCallback(async () => {
     try {
-      setLoadingOrders(true)
       const params = new URLSearchParams()
       if (orderStatusFilter !== 'ALL') params.set('status', orderStatusFilter)
       if (orderTypeFilter !== 'ALL') params.set('type', orderTypeFilter)
@@ -65,12 +64,12 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       if (res.ok) {
         const rawData = await res.json()
         const allOrders = rawData.map(transformOrder)
+        // عرض الطلبات المفلترة، مع استثناء الملغية لأن لها قسماً خاصاً في الأسفل
         setOrders(allOrders.filter((order) => order.status !== 'CANCELLED'))
       }
     } catch (err) {
       console.error('Failed to fetch orders:', err)
     } finally {
-      setLoadingOrders(false)
     }
   }, [orderStatusFilter, orderTypeFilter, currentShiftId])
 
@@ -103,19 +102,27 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
     }
   }, [])
 
-  // Bug fix: parallel fetch with Promise.all
-  const fetchAllOrderData = useCallback(async (shiftId?: string) => {
-    await Promise.all([
-      fetchOrders(),
-      fetchCancelledOrders(),
-      fetchStats(shiftId),
-    ])
-  }, [fetchOrders, fetchCancelledOrders, fetchStats])
+  // توحيد جلب البيانات في دالة واحدة لتقليل تكرار الاتصال بالسيرفر
+  const fetchAllOrderData = useCallback(async () => {
+    setLoadingOrders(true)
+    try {
+      await Promise.all([
+        fetchOrders(),
+        fetchCancelledOrders(),
+        fetchStats(currentShiftId ?? undefined),
+      ])
+    } finally {
+      setLoadingOrders(false)
+    }
+  }, [fetchOrders, fetchCancelledOrders, fetchStats, currentShiftId])
 
-  useEffect(() => { fetchCurrentShift() }, [fetchCurrentShift])
-  useEffect(() => { fetchOrders() }, [fetchOrders])
-  useEffect(() => { fetchCancelledOrders() }, [fetchCancelledOrders])
-  useEffect(() => { fetchStats(currentShiftId ?? undefined) }, [fetchStats, currentShiftId])
+  useEffect(() => {
+    fetchCurrentShift()
+  }, [fetchCurrentShift])
+
+  useEffect(() => {
+    fetchAllOrderData()
+  }, [fetchAllOrderData])
 
   // Print order with XSS fix
   const printOrder = (order: Order) => {

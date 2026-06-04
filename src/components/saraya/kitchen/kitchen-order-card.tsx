@@ -178,9 +178,18 @@ export function KitchenOrderCard({ order, relativeTime, isUpdating, onUpdateStat
                 </div>
               )
             })}
-            {order.items.some((item) => !isKitchenItem(item)) && (
-              <div className="rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5 px-3 py-2 text-[11px] text-[#7c6d14]">
-                توجد أصناف أخرى (باريستا أو صالة) مخفية من هذا العرض.
+            {order.items.some((item) => item.preparationArea === 'BARISTA') && (
+              <div className={`mt-2 flex items-center gap-2 rounded-lg border p-2 transition-colors ${
+                order.baristaStatus === 'READY' 
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                  : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+              }`}>
+                <Coffee className="h-4 w-4" />
+                <span className="text-[11px] font-bold">
+                  الباريستا: {order.baristaStatus === 'READY' ? 'جاهز ✓' : 
+                            order.baristaStatus === 'PREPARING' ? 'قيد التحضير...' : 
+                            'في الانتظار...'}
+                </span>
               </div>
             )}
           </div>

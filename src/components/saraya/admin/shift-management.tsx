@@ -50,7 +50,18 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
             const rawOrders = await ordRes.json()
             setShiftOrders(rawOrders.map(transformOrder))
           }
+        } else {
+          // إذا لم يوجد شيفت مفتوح، نصفر البيانات
+          setCurrentShift(null)
+          setExpenses([])
+          setShiftOrders([])
         }
+      } else {
+        // في حال حدوث خطأ 500 من السيرفر، نصفر الحالة لمنع تعليق الواجهة
+        setCurrentShift(null)
+        setExpenses([])
+        setShiftOrders([])
+        console.error('Server error fetching current shift status (500)')
       }
       if (shiftsRes.ok) {
         const all = await shiftsRes.json()
@@ -104,7 +115,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
-        const safeShiftId = String(currentShift.id).slice(0, 8)
+        const safeShiftId = String(currentShift.id || 'current').slice(0, 8)
         link.download = `shift-${safeShiftId}.xlsx`
         link.click()
         URL.revokeObjectURL(url)
@@ -131,7 +142,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
-        link.download = `shift-${shift.id.slice(0, 8)}.xlsx`
+        link.download = `shift-${String(shift.id || 'old').slice(0, 8)}.xlsx`
         link.click()
         URL.revokeObjectURL(url)
       } else {
@@ -142,8 +153,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
     }
   }
 
-  const deliveredOrders = shiftOrders.filter(o => o.status === 'DELIVERED')
-  const totalRevenue = deliveredOrders.reduce((s, o) => s + o.total, 0)
+  const totalRevenue = shiftOrders.reduce((s, o) => s + o.total, 0)
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /></div>
@@ -168,7 +178,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                 { label: 'الإيرادات', value: `${totalRevenue.toFixed(2)} ج.م`, color: 'text-[#D4AF37]' },
                 { label: 'المصروفات', value: `${totalExpenses.toFixed(2)} ج.م`, color: 'text-red-400' },
                 { label: 'صافي الإيراد', value: `${(totalRevenue - totalExpenses).toFixed(2)} ج.م`, color: totalRevenue - totalExpenses >= 0 ? 'text-emerald-400' : 'text-red-400' },
-                { label: 'طلبات مكتملة', value: deliveredOrders.length, color: 'text-blue-400' },
+                { label: 'طلبات مكتملة', value: shiftOrders.length, color: 'text-blue-400' },
               ].map((s, i) => (
                 <Card key={i} className="border-border/40 bg-card">
                   <CardContent className="p-3">

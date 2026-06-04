@@ -195,6 +195,8 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       })
       if (res.ok) {
         toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة الطلب' })
+        // حذف الأوردر من الـ state فوراً بدون انتظار الـ fetch
+        setAllOrders(prev => prev.filter(o => o.id !== orderId))
         fetchOrders()
         if (receiptOrder?.id === orderId) setReceiptOrder(null)
       } else {
@@ -245,6 +247,8 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       ))
       if (results.every((res) => res.ok)) {
         toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة جميع الطلبات في الطاولة' })
+        // حذف أوردرات الطاولة من الـ state فوراً
+        setAllOrders(prev => prev.filter(o => !orderIds.includes(o.id)))
         fetchOrders()
         setReceiptTableOrders(null)
       } else {

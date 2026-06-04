@@ -7,31 +7,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const current = searchParams.get('current')
 
+    // توحيد البحث عن الشيفت الحالي أو جلب الكل في محاولة واحدة لمنع تكرار الكود
     if (current === 'true') {
-      let shift = await db.shift.findFirst({
-        where: { status: 'OPEN' },
+      const shift = await db.shift.findFirst({
+        // استخدام 'as any' مؤقتاً لتجنب انهيار النوع إذا كانت قاعدة البيانات تحتوي على قيم قديمة
+        where: { status: { in: ['OPEN', 'active'] } as any },
         orderBy: { createdAt: 'desc' },
       })
-
-      // Auto-migrate legacy shifts with old status values ('active'/'closed')
-      if (!shift) {
-        const legacyOpen = await db.shift.findFirst({
-          where: { status: 'active' },
-          orderBy: { createdAt: 'desc' },
-        })
-        if (legacyOpen) {
-          shift = await db.shift.update({
-            where: { id: legacyOpen.id },
-            data: { status: 'OPEN' },
-          })
-          // Also fix all 'closed' shifts
-          await db.shift.updateMany({
-            where: { status: 'closed' },
-            data: { status: 'CLOSED' },
-          })
-        }
-      }
-
       return NextResponse.json(shift || null)
     }
 
@@ -51,9 +33,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { startedBy } = body
 
-    // Close any open shifts first
+    // إغلاق أي وردية مفتوحة أولاً لضمان عدم وجود تكرار (OPEN أو active)
     await db.shift.updateMany({
-      where: { status: 'OPEN' },
+      where: { status: { in: ['OPEN', 'active'] } as any },
       data: { status: 'CLOSED', endedAt: new Date() },
     })
 

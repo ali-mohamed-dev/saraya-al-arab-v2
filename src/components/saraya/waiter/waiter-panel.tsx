@@ -57,7 +57,8 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
   const [currentShiftId, setCurrentShiftId] = useState<string>('')
   const [shiftLoading, setShiftLoading] = useState(true)
-  const prevOrderStatusRef = useRef<Record<string, Order['status']>>({})
+  // تتبع حالة كل قسم على حدة (عام، مطبخ، باريستا)
+  const prevStatusesRef = useRef<Record<string, { status: string, kitchen: string, barista: string }>>({})
 
   // ── Shift status ───────────────────────────────────────────────────────
   const fetchShiftStatus = useCallback(async () => {
@@ -111,28 +112,40 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
         o.status !== 'READY_TO_PAY' // إخفاء طلبات الدفع عن الويتر
       )
 
-      const previousStatus = prevOrderStatusRef.current
+      const previous = prevStatusesRef.current
       const newDineInPending = allOrders.filter((o) =>
-        o.status === 'PENDING' && o.type === 'DINE_IN' && !previousStatus[o.id]
+        o.status === 'PENDING' && o.type === 'DINE_IN' && !previous[o.id]
       )
-      const readyDineInOrders = allOrders.filter((o) =>
-        o.status === 'READY' && o.type === 'DINE_IN' && previousStatus[o.id] && previousStatus[o.id] !== 'READY'
-      )
+
+      // تحديد ما إذا كان قسم معين (مطبخ أو باريستا) قد أصبح جاهزاً للتو
+      allOrders.forEach((o) => {
+        const prev = previous[o.id]
+        if (!prev) return
+
+        const kitchenJustReady = prev.kitchen !== 'READY' && o.kitchenStatus === 'READY'
+        const baristaJustReady = prev.barista !== 'READY' && o.baristaStatus === 'READY'
+
+        if (kitchenJustReady || baristaJustReady) {
+          playNotificationSound()
+          const part = kitchenJustReady ? 'الطعام' : 'المشروبات'
+          toast({ 
+            title: `طلب ${part} جاهز`, 
+            description: `طلب رقم #${o.orderNumber} للطاولة ${o.tableNumber || ''}` 
+          })
+        }
+      })
 
       allOrders.sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
-      if (Object.keys(previousStatus).length > 0) {
-        if (newDineInPending.length > 0) {
-          playNotificationSound()
-          toast({ title: 'طلب صالة جديد', description: `طلب رقم #${newDineInPending[0].orderNumber} وصل للويتر` })
-        }
-        if (readyDineInOrders.length > 0) {
-          playNotificationSound()
-          toast({ title: 'طلب صالة جاهز', description: `طلب رقم #${readyDineInOrders[0].orderNumber} جاهز للاستلام` })
-        }
+      if (Object.keys(previous).length > 0 && newDineInPending.length > 0) {
+        playNotificationSound()
+        toast({ title: 'طلب صالة جديد', description: `طلب رقم #${newDineInPending[0].orderNumber} وصل للويتر` })
       }
 
-      prevOrderStatusRef.current = Object.fromEntries(allOrders.map((o) => [o.id, o.status]))
+      prevStatusesRef.current = Object.fromEntries(allOrders.map((o) => [
+        o.id, 
+        { status: o.status, kitchen: o.kitchenStatus, barista: o.baristaStatus }
+      ]))
       setOrders(allOrders)
     } catch {
       /* ignore polling errors */
@@ -201,7 +214,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
     const existing = orders.find((order) =>
       order.type === 'DINE_IN' &&
       order.tableNumber === tableNumber.trim() &&
-      !['DELIVERED', 'CANCELLED'].includes(order.status)
+      !['DELIVERED', 'CANCELLED', 'READY_TO_PAY'].includes(order.status)
     )
     setExistingTableOrder(existing || null)
   }, [orderType, tableNumber, orders])
@@ -220,6 +233,12 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
+        
+        // تحديث الحالة المحلية فوراً لإغلاق الطاولة عند الويتر قبل انتظار الـ polling القادم
+        if (newStatus === 'READY_TO_PAY') {
+          setOrders(prev => prev.filter(o => o.id !== orderId))
+        }
+        
         fetchActiveOrders()
       } else {
         const data = await res.json().catch(() => ({}))
@@ -399,6 +418,13 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background" dir="rtl">
+      {/* حل مشكلة السكرول في النوافذ المنبثقة */}
+      <style jsx global>{`
+        [role="dialog"] {
+          max-height: 92vh;
+          overflow-y: auto !important;
+        }
+      `}</style>
       <WaiterHeader
         pendingCount={pendingCount}
         confirmedCount={confirmedCount}

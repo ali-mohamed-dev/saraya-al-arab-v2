@@ -1,34 +1,36 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+// PUT /api/orders/[id]/status
+// تحديث حالة الطلب (PENDING -> CONFIRMED -> PREPARING -> READY -> READY_TO_PAY)
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params
-    const body = await request.json()
+    const { status, kitchenAccess } = await request.json()
+
+    // 1. التحقق من وجود الطلب أولاً
+    const order = await db.order.findUnique({ where: { id } })
     
-    // تحديث الطلب في قاعدة البيانات
-    // نقبل الحقول الديناميكية مثل status, kitchenAccess, baristaStatus, kitchenStatus
+   
+    if (!order) {
+      return NextResponse.json({ id, deleted: true, status: 'DELIVERED' }, { status: 200 })
+    }
+
+    // 3. تحديث حالة الطلب
     const updatedOrder = await db.order.update({
       where: { id },
       data: {
-        ...body,
-        // إذا تم تأكيد الطلب، نحدث وقت التحديث
-        updatedAt: new Date(),
-      },
-      include: {
-        items: true,
+        status,
+        kitchenAccess: kitchenAccess !== undefined ? kitchenAccess : undefined,
       },
     })
 
     return NextResponse.json(updatedOrder)
   } catch (error) {
-    console.error('Error updating order status:', error)
-    return NextResponse.json(
-      { error: 'فشل في تحديث حالة الطلب. تأكد من صحة البيانات.' },
-      { status: 500 }
-    )
+    console.error('Update order status error:', error)
+    return NextResponse.json({ error: 'Failed to update order status' }, { status: 500 })
   }
 }

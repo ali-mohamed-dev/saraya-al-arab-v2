@@ -1,107 +1,74 @@
-import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { NextRequest, NextResponse } from 'next/server'
 import { generateShiftExcel } from '@/lib/saraya/excel-export'
 
+// POST /api/shifts/[id]/export-and-clear
+// هذا المسار مسؤول عن إنهاء الوردية وحساب الإيرادات النهائية
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
-  const body = await request.json().catch(() => ({}))
-  const { endedBy, notes, includeNonDelivered } = body as {
-    endedBy?: string
-    notes?: string
-    includeNonDelivered?: boolean
-  }
-
   try {
-    const result = await db.$transaction(async (tx) => {
-      // Fetch shift orders
-      const orders = await tx.order.findMany({
-        where: {
-          shiftId: id,
-          ...(includeNonDelivered ? {} : { status: 'DELIVERED' }),
-        },
-        include: { items: true },
-        orderBy: { createdAt: 'desc' },
-      })
+    const { id } = await params
+    const { endedBy, notes } = await request.json()
 
-      const deliveredOrders = orders.filter(o => o.status === 'DELIVERED')
-      const totalRevenue = deliveredOrders.reduce((sum, o) => sum + (o.total ?? 0), 0)
-
-      // Expenses for shift
-      const expenses = await tx.expense.findMany({
-        where: { shiftId: id },
-        orderBy: { createdAt: 'desc' },
-      })
-      const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
-      const netRevenue = totalRevenue - totalExpenses
-
-      // Close shift — use correct schema field names: endedAt / endedBy
-      const shift = await tx.shift.update({
-        where: { id },
-        data: {
-          status: 'CLOSED',
-          endedAt: new Date(),   // FIX: was closedAt (field doesn't exist in schema)
-          endedBy: endedBy || '', // FIX: was closedBy (field doesn't exist in schema)
-          notes: notes || '',
-        },
-      })
-
-      // Clear orders and expenses for this shift
-      const orderIds = orders.map((o) => o.id)
-      if (orderIds.length > 0) {
-        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } })
-      }
-
-      await tx.order.deleteMany({
-        where: {
-          shiftId: id,
-          ...(includeNonDelivered ? {} : { status: 'DELIVERED' }),
-        },
-      })
-
-      await tx.expense.deleteMany({ where: { shiftId: id } })
-
-      return { shift, orders, expenses, netRevenue, totalRevenue, totalExpenses }
+    // 1. جلب بيانات الوردية الحالية مع الطلبات والمصاريف لحساب الأرقام النهائية
+    const shift = await db.shift.findUnique({
+      where: { id },
+      include: {
+        orders: { where: { status: 'DELIVERED' } },
+        expenses: true,
+      },
     })
 
-    // Generate Excel file
+    if (!shift) {
+      return NextResponse.json({ error: 'الوردية غير موجودة' }, { status: 404 })
+    }
+
+    const totalRevenue = shift.orders.reduce((sum, o) => sum + o.total, 0)
+    const totalExpenses = shift.expenses.reduce((sum, e) => sum + e.amount, 0)
+    const netRevenue = totalRevenue - totalExpenses
+
+    // 2. تحديث الوردية إلى حالة CLOSED (أو closed حسب قاعدة البيانات)
+    // نستخدم 'as any' لتفادي تعارض أنواع الـ Enum القديمة والجديدة
+    const updatedShift = await db.shift.update({
+      where: { id },
+      data: {
+        status: 'CLOSED' as any,
+        endedAt: new Date(),
+        endedBy: endedBy || 'admin',
+        notes: notes || '',
+        totalRevenue,
+        totalExpenses,
+        netRevenue,
+      },
+    })
+
+    // 3. توليد ملف الـ Excel
     const xlsxBuffer = await generateShiftExcel({
       shift: {
-        startedAt: result.shift.createdAt,
-        endedAt: result.shift.endedAt,   // FIX: was result.shift.closedAt
-        startedBy: result.shift.startedBy,
-        endedBy: result.shift.endedBy,   // FIX: was result.shift.closedBy
-        notes: result.shift.notes,
+        startedAt: updatedShift.createdAt,
+        endedAt: updatedShift.endedAt,
+        startedBy: updatedShift.startedBy || 'admin',
+        endedBy: updatedShift.endedBy,
+        notes: updatedShift.notes,
       },
-      orders: result.orders.map((o) => ({
-        orderNumber: o.orderNumber ?? 0,
-        type: o.type,
+      orders: shift.orders.map(o => ({
         status: o.status,
-        tableNumber: o.tableNumber,
-        total: o.total ?? 0,
-        customerName: o.customerName,
-        createdAt: o.createdAt,
-        items: o.items?.map((it) => ({
-          name: it.mealTitle,
-          qty: it.quantity,
-          price: it.price,
-        })),
+        total: o.total || 0
       })),
-      expenses: result.expenses.map((e) => ({
-        title: e.description ?? '',
-        amount: e.amount ?? 0,
-        category: e.category ?? 'عام',
-        addedBy: e.createdBy ?? '',
-        createdAt: e.createdAt,
+      expenses: shift.expenses.map(e => ({
+        title: e.description || '',
+        amount: e.amount || 0,
+        category: e.category || 'عام',
+        addedBy: e.createdBy || '',
+        createdAt: e.createdAt
       })),
-      totalRevenue: result.totalRevenue,
-      totalExpenses: result.totalExpenses,
-      netRevenue: result.netRevenue,
+      totalRevenue,
+      totalExpenses,
+      netRevenue
     })
 
-    // Return xlsx as binary response
     return new NextResponse(new Uint8Array(xlsxBuffer), {
       status: 200,
       headers: {
@@ -110,7 +77,7 @@ export async function POST(
       },
     })
   } catch (error) {
-    console.error('export-and-clear error:', error)
-    return NextResponse.json({ error: 'Failed to export and clear' }, { status: 500 })
+    console.error('Shift closing error:', error)
+    return NextResponse.json({ error: 'فشل في إغلاق الوردية' }, { status: 500 })
   }
 }
