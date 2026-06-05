@@ -9,7 +9,7 @@ interface ShiftClosedScreenProps {
   onLogout?: () => void
 }
 
-export function ShiftClosedScreen({ title = 'لوحة الموظفين', subtitle = 'سرايا العرب', onLogout }: ShiftClosedScreenProps) {
+export function ShiftClosedScreen({ title = 'لوحة الموظفين', subtitle = 'توب ', onLogout }: ShiftClosedScreenProps) {
   return (
     <div className="min-h-screen bg-background" dir="rtl">
       <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">

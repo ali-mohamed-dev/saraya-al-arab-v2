@@ -36,7 +36,7 @@ export async function generateShiftExcel(opts: {
   const { expenses, totalRevenue, totalExpenses, netRevenue } = opts
 
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'Saraya Al-Arab'
+  wb.creator = 'Top'
   wb.created = new Date()
 
   const ws = wb.addWorksheet('تقرير الشيفت', {
@@ -58,7 +58,7 @@ export async function generateShiftExcel(opts: {
   // ─── عنوان الصفحة ────────────────────────────────
   ws.mergeCells('A1:G1')
   const titleCell = ws.getCell('A1')
-  titleCell.value = 'تقرير شيفت سرايا العرب'
+  titleCell.value = 'تقرير شيفت توب '
   titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: WHITE } }
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK_BG } }
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
@@ -72,7 +72,6 @@ export async function generateShiftExcel(opts: {
   // ─── Headers: تفاصيل المصروفات (A-D) | ملخص الإيرادات (F-G) ──
   const headerRow = 3
 
-  // header تفاصيل المصروفات
   ;['#', 'اسم المصروف', 'الفئة', 'المبلغ'].forEach((h, i) => {
     const col = ['A', 'B', 'C', 'D'][i]
     const c = ws.getCell(`${col}${headerRow}`)
@@ -83,7 +82,6 @@ export async function generateShiftExcel(opts: {
     c.border = thinBorder()
   })
 
-  // header ملخص الإيرادات
   ;['البيان', 'القيمة'].forEach((h, i) => {
     const col = ['F', 'G'][i]
     const c = ws.getCell(`${col}${headerRow}`)

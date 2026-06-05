@@ -1,10 +1,10 @@
-# Task 5-a: Base Saraya Al-Arab Restaurant Frontend Components
+# Task 5-a: Base Top Restaurant Frontend Components
 **Agent**: frontend-components
 **Date**: 2025-01-16
 **Status**: ✅ Completed
 
 ## Summary
-Created 5 new React component files and verified 1 existing file for the Saraya Al-Arab restaurant frontend. All components follow the project's design system (gold #D4AF37 color, dark theme, RTL Arabic layout, Framer Motion animations).
+Created 5 new React component files and verified 1 existing file for the Top restaurant frontend. All components follow the project's design system (gold #D4AF37 color, dark theme, RTL Arabic layout, Framer Motion animations).
 
 ## Files Created
 1. `/src/components/saraya/meal-card.tsx` - Meal card with direct add-to-cart

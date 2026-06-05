@@ -53,7 +53,7 @@ export function AdminHeader({ onLogout }: AdminHeaderProps) {
           </div>
           <div>
             <h1 className="text-lg font-bold text-[#D4AF37]">لوحة التحكم</h1>
-            <p className="text-xs text-muted-foreground">سرايا العرب - إدارة المطعم</p>
+            <p className="text-xs text-muted-foreground">توب  - إدارة المطعم</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

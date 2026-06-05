@@ -6,6 +6,22 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const current = searchParams.get('current')
+    const date = searchParams.get('date')
+
+    if (date) {
+      const startOfDay = new Date(date)
+      startOfDay.setHours(0, 0, 0, 0)
+      const endOfDay = new Date(date)
+      endOfDay.setHours(23, 59, 59, 999)
+
+      const shift = await db.shift.findFirst({
+        where: {
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      return NextResponse.json(shift || null)
+    }
 
     // توحيد البحث عن الشيفت الحالي أو جلب الكل في محاولة واحدة لمنع تكرار الكود
     if (current === 'true') {

@@ -81,7 +81,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
               دخول الموظفين
             </CardTitle>
             <p className="text-sm text-muted-foreground" dir="rtl">
-              سرايا العرب - نظام إدارة المطعم
+              توب - نظام إدارة المطعم
             </p>
           </CardHeader>
 

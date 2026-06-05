@@ -5,7 +5,7 @@
 ## Date: 2025-01-16
 
 ## Summary
-Created a Socket.io mini-service for the Saraya Al-Arab restaurant ordering system. This service provides real-time WebSocket communication for order notifications between kitchen, admin, and customer interfaces.
+Created a Socket.io mini-service for the Top restaurant ordering system. This service provides real-time WebSocket communication for order notifications between kitchen, admin, and customer interfaces.
 
 ## Files Created
 

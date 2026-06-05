@@ -29,7 +29,7 @@ export function WaiterHeader({
           </div>
           <div>
             <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الويتر</h1>
-            <p className="text-xs text-muted-foreground">سرايا العرب</p>
+            <p className="text-xs text-muted-foreground">توب </p>
           </div>
         </div>
         <div className="flex items-center gap-3">

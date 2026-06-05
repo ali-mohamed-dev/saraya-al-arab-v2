@@ -310,7 +310,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
               </div>
               <div>
                 <h1 className="text-base md:text-lg font-bold text-[#D4AF37]">شاشة المطبخ</h1>
-                <p className="text-[10px] md:text-xs text-muted-foreground">سرايا العرب - المطبخ</p>
+                <p className="text-[10px] md:text-xs text-muted-foreground">توب  - المطبخ</p>
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-3">

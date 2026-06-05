@@ -1,6 +1,6 @@
 'use client'
 
-import { Clock, Phone, MapPin, Utensils, Download, Check, Flame, CheckCircle, BadgeCheck, X, Loader2, Package } from 'lucide-react'
+import { Clock, Phone, MapPin, Utensils, Download, Check, Flame, CheckCircle, BadgeCheck, X, Loader2, Package, Eye } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,26 +10,26 @@ import { ORDER_STATUS_MAP } from '@/lib/saraya/constants'
 import type { Order } from '@/lib/saraya/types'
 import { getRelativeTime } from '@/lib/saraya/helpers'
 
-// Build ORDER_TYPE_MAP with icons (can't store JSX in constants)
 const ORDER_TYPE_MAP_WITH_ICONS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  DINE_IN: { label: 'صالة', icon: <Utensils className="h-3.5 w-3.5" />, color: 'text-blue-400' },
-  TAKEAWAY: { label: 'تيكاوي', icon: <Package className="h-3.5 w-3.5" />, color: 'text-orange-400' },
-  DELIVERY: { label: 'ديليفري', icon: <Phone className="h-3.5 w-3.5" />, color: 'text-purple-400' },
+  DINE_IN:   { label: 'صالة',    icon: <Utensils className="h-3.5 w-3.5" />, color: 'text-blue-400'   },
+  TAKEAWAY:  { label: 'تيكاوي', icon: <Package  className="h-3.5 w-3.5" />, color: 'text-orange-400' },
+  DELIVERY:  { label: 'ديليفري', icon: <Phone    className="h-3.5 w-3.5" />, color: 'text-purple-400' },
 }
 
 interface OrderCardProps {
   order: Order
   relativeTime: string
   isUpdating: boolean
-  onUpdateStatus: (orderId: string, newStatus: string) => void
+  onUpdateStatus: (orderId: string, newStatus: string) => Promise<void> | void
   onCancel: (order: Order) => void
   onPrint: (order: Order) => void
+  onViewReceipt: (order: Order) => void
 }
 
-export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onCancel, onPrint }: OrderCardProps) {
+export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onCancel, onPrint, onViewReceipt }: OrderCardProps) {
   const statusInfo = ORDER_STATUS_MAP[order.status] ?? ORDER_STATUS_MAP.PENDING
-  const typeInfo = ORDER_TYPE_MAP_WITH_ICONS[order.type] ?? ORDER_TYPE_MAP_WITH_ICONS.DINE_IN
-  const isReady = order.status === 'READY'
+  const typeInfo   = ORDER_TYPE_MAP_WITH_ICONS[order.type] ?? ORDER_TYPE_MAP_WITH_ICONS.DINE_IN
+  const isReady    = order.status === 'READY' || order.status === 'READY_TO_PAY'
 
   return (
     <motion.div
@@ -42,22 +42,28 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
       <Card
         className={`border overflow-hidden transition-all duration-200 ${
           isReady
-            ? 'border-green-500/50 bg-green-500/5'
-            : 'border-border/50 bg-card'
+            ? 'border-green-500/50 hover:border-green-400/70 bg-green-500/5'
+            : 'border-border/50 hover:border-[#D4AF37]/40 bg-card'
         }`}
         dir="rtl"
       >
+        {/* Color stripe — same as cashier */}
         <div className={`h-1 ${isReady ? 'bg-gradient-to-l from-green-500 to-green-400/40' : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'}`} />
+
         <CardContent className="p-4 space-y-3">
-          {/* Header */}
+
+          {/* ── Header ── */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-2">
+              {/* Order number badge */}
               <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
                 <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
                   #{order.orderNumber}
                 </span>
               </div>
+
               <div>
+                {/* Status + type */}
                 <div className="flex items-center gap-2">
                   <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.bg}`}>
                     <span className={statusInfo.color}>{statusInfo.label}</span>
@@ -66,6 +72,7 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                     {typeInfo.icon}{typeInfo.label}
                   </span>
                 </div>
+                {/* Time */}
                 <div className="flex items-center gap-1 mt-1">
                   <Clock className="h-3 w-3 text-muted-foreground" />
                   <span className="text-[10px] text-muted-foreground">
@@ -74,14 +81,40 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 </div>
               </div>
             </div>
-            {order.tableNumber && (
+
+            {/* Table badge */}
+            {order.type === 'DINE_IN' && order.tableNumber && (
               <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px] gap-1">
                 <Utensils className="h-2.5 w-2.5" />طاولة {order.tableNumber}
               </Badge>
             )}
           </div>
 
-          {/* Customer */}
+          {/* ── Kitchen / Barista status pills ── */}
+          <div className="flex flex-wrap gap-2">
+            {order.items.some(i => i.preparationArea === 'KITCHEN') && (
+              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+                order.kitchenStatus === 'READY'     ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                order.kitchenStatus === 'CANCELLED' ? 'bg-red-500/20   text-red-400   border-red-500/30'   :
+                order.kitchenStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
+                'bg-muted text-muted-foreground'
+              }`}>
+                🔥 مطبخ: {ORDER_STATUS_MAP[order.kitchenStatus]?.label || order.kitchenStatus}
+              </Badge>
+            )}
+            {order.items.some(i => i.preparationArea === 'BARISTA') && (
+              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+                order.baristaStatus === 'READY'     ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                order.baristaStatus === 'CANCELLED' ? 'bg-red-500/20   text-red-400   border-red-500/30'   :
+                order.baristaStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
+                'bg-blue-500/20  text-blue-400  border-blue-500/30'
+              }`}>
+                ☕ باريستا: {ORDER_STATUS_MAP[order.baristaStatus]?.label || order.baristaStatus}
+              </Badge>
+            )}
+          </div>
+
+          {/* ── Customer info ── */}
           <div className="flex flex-col gap-1 text-xs text-muted-foreground">
             <div className="flex items-center gap-3">
               <span>{order.customerName}</span>
@@ -97,13 +130,11 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
               )}
             </div>
             {order.status === 'CANCELLED' && order.cancelledBy && (
-              <div className="text-[10px] text-red-300">
-                ملغي بواسطة: {order.cancelledBy}
-              </div>
+              <div className="text-[10px] text-red-300">ملغي بواسطة: {order.cancelledBy}</div>
             )}
           </div>
 
-          {/* Items */}
+          {/* ── Items list ── */}
           <div className="space-y-1.5">
             {order.items.slice(0, 3).map(item => (
               <div key={item.id} className="flex items-center justify-between text-xs">
@@ -130,35 +161,9 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
             )}
           </div>
 
-          {/* Kitchen & Barista Sub-Status */}
-          {(order.kitchenStatus || order.baristaStatus) && order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
-            <div className="flex gap-2 mt-2">
-              {order.items.some(i => i.preparationArea === 'KITCHEN') && (
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
-                  order.kitchenStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
-                  order.kitchenStatus === 'PREPARING' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' :
-                  order.kitchenStatus === 'CANCELLED' ? 'border-red-500/30 bg-red-500/10 text-red-400' :
-                  'border-orange-500/30 bg-orange-500/10 text-orange-400'
-                }`}>
-                  🔥 مطبخ: {order.kitchenStatus === 'READY' ? 'جاهز' : order.kitchenStatus === 'PREPARING' ? 'يحضر' : order.kitchenStatus === 'CANCELLED' ? 'ملغي' : 'ينتظر'}
-                </span>
-              )}
-              {order.items.some(i => i.preparationArea === 'BARISTA') && (
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
-                  order.baristaStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
-                  order.baristaStatus === 'PREPARING' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
-                  order.baristaStatus === 'CANCELLED' ? 'border-red-500/30 bg-red-500/10 text-red-400' :
-                  'border-blue-500/30 bg-blue-500/10 text-blue-400'
-                }`}>
-                  ☕ باريستا: {order.baristaStatus === 'READY' ? 'جاهز' : order.baristaStatus === 'PREPARING' ? 'يحضر' : order.baristaStatus === 'CANCELLED' ? 'ملغي' : 'ينتظر'}
-                </span>
-              )}
-            </div>
-          )}
-
           <Separator className="bg-border/20" />
 
-          {/* Footer */}
+          {/* ── Footer: total + admin action buttons ── */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] text-muted-foreground">الإجمالي</p>
@@ -166,17 +171,33 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 {order.total.toFixed(2)} ج.م
               </p>
             </div>
+
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline"
+              {/* View Receipt */}
+              <Button
+                size="sm" variant="outline"
+                onClick={() => onViewReceipt(order)}
+                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold"
+              >
+                <Eye className="h-3 w-3" /> فاتورة
+              </Button>
+
+              {/* Print */}
+              <Button
+                size="sm" variant="outline"
                 onClick={() => onPrint(order)}
-                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold">
+                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold"
+              >
                 <Download className="h-3 w-3" /> طباعة
               </Button>
+
+              {/* Status progression buttons */}
               {order.status === 'PENDING' && (
                 <Button size="sm"
                   onClick={() => onUpdateStatus(order.id, 'CONFIRMED')}
                   disabled={isUpdating}
-                  className="gap-1 bg-green-600 text-white hover:bg-green-700 h-8 px-3 text-xs font-bold">
+                  className="gap-1 bg-green-600 text-white hover:bg-green-700 h-8 px-3 text-xs font-bold"
+                >
                   {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                   تأكيد
                 </Button>
@@ -185,7 +206,8 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 <Button size="sm"
                   onClick={() => onUpdateStatus(order.id, 'PREPARING')}
                   disabled={isUpdating}
-                  className="gap-1 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-8 px-3 text-xs font-bold">
+                  className="gap-1 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-8 px-3 text-xs font-bold"
+                >
                   {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Flame className="h-3 w-3" />}
                   تحضير
                 </Button>
@@ -194,7 +216,8 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 <Button size="sm"
                   onClick={() => onUpdateStatus(order.id, 'READY')}
                   disabled={isUpdating}
-                  className="gap-1 bg-blue-600 text-white hover:bg-blue-700 h-8 px-3 text-xs font-bold">
+                  className="gap-1 bg-blue-600 text-white hover:bg-blue-700 h-8 px-3 text-xs font-bold"
+                >
                   {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
                   جاهز
                 </Button>
@@ -203,7 +226,8 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 <Button size="sm"
                   onClick={() => onUpdateStatus(order.id, 'DELIVERED')}
                   disabled={isUpdating}
-                  className="gap-1 bg-green-600 text-white hover:bg-green-500 h-8 px-3 text-xs font-bold">
+                  className="gap-1 bg-green-600 text-white hover:bg-green-500 h-8 px-3 text-xs font-bold"
+                >
                   {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
                   تسليم
                 </Button>
@@ -212,21 +236,26 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 <Button size="sm"
                   onClick={() => onUpdateStatus(order.id, 'DELIVERED')}
                   disabled={isUpdating}
-                  className="gap-1 bg-emerald-600 text-white hover:bg-emerald-500 h-8 px-3 text-xs font-bold">
+                  className="gap-1 bg-emerald-600 text-white hover:bg-emerald-500 h-8 px-3 text-xs font-bold"
+                >
                   {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
                   دفع
                 </Button>
               )}
+
+              {/* Cancel (admin only — always visible unless already cancelled) */}
               {order.status !== 'CANCELLED' && (
                 <Button size="sm" variant="outline"
                   onClick={() => onCancel(order)}
                   disabled={isUpdating}
-                  className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 h-8 px-3">
+                  className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 h-8 px-3"
+                >
                   <X className="h-3 w-3" />
                 </Button>
               )}
             </div>
           </div>
+
         </CardContent>
       </Card>
     </motion.div>

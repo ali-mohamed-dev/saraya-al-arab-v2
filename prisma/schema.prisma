@@ -189,3 +189,13 @@ model StoreSettings {
   message     String   @default("المطعم مغلق حالياً، لا يمكن استقبال الطلبات")
   updatedAt   DateTime @updatedAt
 }
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  icon      String   @default("")
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

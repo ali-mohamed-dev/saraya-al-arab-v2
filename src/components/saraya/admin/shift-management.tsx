@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Loader2, PlayCircle, StopCircle, Download, DollarSign
+  Loader2, PlayCircle, StopCircle, Download, ChevronDown, ChevronUp, Search, Calendar, TrendingUp
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,12 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   const [shiftNotes, setShiftNotes] = useState('')
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
 
+  // ── فلترة الشيفتات ─────────────────────────────────
+  const [showPastShifts, setShowPastShifts] = useState(true)
+  const [filterDate, setFilterDate] = useState('')
+  const [filterFrom, setFilterFrom] = useState('')
+  const [filterTo, setFilterTo] = useState('')
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -51,17 +57,14 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
             setShiftOrders(rawOrders.map(transformOrder))
           }
         } else {
-          // إذا لم يوجد شيفت مفتوح، نصفر البيانات
           setCurrentShift(null)
           setExpenses([])
           setShiftOrders([])
         }
       } else {
-        // في حال حدوث خطأ 500 من السيرفر، نصفر الحالة لمنع تعليق الواجهة
         setCurrentShift(null)
         setExpenses([])
         setShiftOrders([])
-        console.error('Server error fetching current shift status (500)')
       }
       if (shiftsRes.ok) {
         const all = await shiftsRes.json()
@@ -75,6 +78,47 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // ── فلترة الشيفتات السابقة ──────────────────────────
+  const filteredShifts = useMemo(() => {
+    return pastShifts.filter(shift => {
+      const shiftDate = new Date(shift.startedAt)
+
+      // فلتر يوم محدد
+      if (filterDate) {
+        const fd = new Date(filterDate)
+        if (
+          shiftDate.getFullYear() !== fd.getFullYear() ||
+          shiftDate.getMonth() !== fd.getMonth() ||
+          shiftDate.getDate() !== fd.getDate()
+        ) return false
+      }
+
+      // فلتر من تاريخ
+      if (filterFrom) {
+        const from = new Date(filterFrom)
+        from.setHours(0, 0, 0, 0)
+        if (shiftDate < from) return false
+      }
+
+      // فلتر إلى تاريخ
+      if (filterTo) {
+        const to = new Date(filterTo)
+        to.setHours(23, 59, 59, 999)
+        if (shiftDate > to) return false
+      }
+
+      return true
+    })
+  }, [pastShifts, filterDate, filterFrom, filterTo])
+
+  // ── إحصائيات الفترة المفلترة ────────────────────────
+  const periodStats = useMemo(() => {
+    const totalRev = filteredShifts.reduce((s, sh) => s + sh.totalRevenue, 0)
+    const totalExp = filteredShifts.reduce((s, sh) => s + sh.totalExpenses, 0)
+    const totalNet = filteredShifts.reduce((s, sh) => s + sh.netRevenue, 0)
+    return { totalRev, totalExp, totalNet, count: filteredShifts.length }
+  }, [filteredShifts])
 
   const startNewShift = async () => {
     try {
@@ -102,30 +146,22 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
       const res = await fetch(`/api/shifts/${currentShift.id}/export-and-clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          endedBy: adminUsername,
-          notes: shiftNotes,
-          includeNonDelivered: true,
-        }),
+        body: JSON.stringify({ endedBy: adminUsername, notes: shiftNotes, includeNonDelivered: true }),
       })
-
       if (res.ok) {
-        // Download xlsx file from response
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
-        const safeShiftId = String(currentShift.id || 'current').slice(0, 8)
-        link.download = `shift-${safeShiftId}.xlsx`
+        link.download = `shift-${String(currentShift.id).slice(0, 8)}.xlsx`
         link.click()
         URL.revokeObjectURL(url)
-
         toast({ title: 'تم إغلاق الشيفت', description: 'تم تصدير التقرير بنجاح' })
         setShowCloseConfirm(false)
         fetchData()
       } else {
         const err = await res.json().catch(() => ({}))
-        toast({ title: 'خطأ', description: (err as { error?: string }).error || 'فشل تصدير الشيفت أو الحذف', variant: 'destructive' })
+        toast({ title: 'خطأ', description: (err as { error?: string }).error || 'فشل تصدير الشيفت', variant: 'destructive' })
       }
     } catch {
       toast({ title: 'خطأ', description: 'فشل الاتصال بالخادم', variant: 'destructive' })
@@ -142,7 +178,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.href = url
-        link.download = `shift-${String(shift.id || 'old').slice(0, 8)}.xlsx`
+        link.download = `shift-${String(shift.id).slice(0, 8)}.xlsx`
         link.click()
         URL.revokeObjectURL(url)
       } else {
@@ -160,14 +196,14 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
 
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Current Shift Card */}
+
+      {/* Current Shift */}
       {currentShift ? (
         <Card className="border-green-500/30 bg-green-500/5">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <h3 className="text-green-400 flex items-center gap-2 text-lg font-semibold">
-                <PlayCircle className="h-5 w-5" />
-                الشيفت الحالي — مفتوح
+                <PlayCircle className="h-5 w-5" />الشيفت الحالي — مفتوح
               </h3>
               <Badge className="bg-green-500/20 text-green-400 border-green-500/30">نشط</Badge>
             </div>
@@ -191,15 +227,14 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
             <div className="text-sm text-muted-foreground">
               بدأ: {new Date(currentShift.startedAt).toLocaleString('ar-EG')} — بواسطة {currentShift.startedBy}
             </div>
-            <Button onClick={() => setShowCloseConfirm(true)}
-              className="gap-2 bg-red-600 text-white hover:bg-red-500 font-bold">
+            <Button onClick={() => setShowCloseConfirm(true)} className="gap-2 bg-red-600 text-white hover:bg-red-500 font-bold">
               <StopCircle className="h-4 w-4" />إنهاء الشيفت وتسليم الإيراد
             </Button>
           </CardContent>
         </Card>
       ) : (
         <Card className="border-border/40 bg-card">
-          <CardContent className="p-6 space-y-6">
+          <CardContent className="p-6">
             <div className="text-center space-y-4">
               <StopCircle className="h-12 w-12 text-muted-foreground/30 mx-auto" />
               <p className="text-muted-foreground">لا يوجد شيفت مفتوح حالياً</p>
@@ -211,45 +246,141 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         </Card>
       )}
 
-      {/* Past Shifts */}
+      {/* Past Shifts Section */}
       {pastShifts.length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-sm font-bold text-muted-foreground">الشيفتات السابقة</h3>
-          {pastShifts.map(shift => (
-            <Card key={shift.id} className="border-border/40 bg-card">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div>
-                    <p className="text-sm font-medium">{new Date(shift.startedAt).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(shift.startedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })} —
-                      {shift.endedAt ? new Date(shift.endedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
-                      {' | '}{shift.startedBy}
-                    </p>
+
+          {/* Header + toggle */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-muted-foreground">
+              الشيفتات السابقة ({pastShifts.length})
+            </h3>
+            <Button size="sm" variant="ghost" onClick={() => setShowPastShifts(p => !p)}
+              className="gap-1 text-muted-foreground hover:text-foreground text-xs">
+              {showPastShifts ? <><ChevronUp className="h-4 w-4" />إخفاء</> : <><ChevronDown className="h-4 w-4" />إظهار</>}
+            </Button>
+          </div>
+
+          {showPastShifts && (
+            <>
+              {/* فلاتر البحث */}
+              <Card className="border-border/40 bg-card">
+                <CardContent className="p-4 space-y-3">
+                  <p className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+                    <Search className="h-3.5 w-3.5" />بحث وفلترة
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* يوم محدد */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />يوم محدد
+                      </label>
+                      <input
+                        type="date"
+                        value={filterDate}
+                        onChange={e => { setFilterDate(e.target.value); setFilterFrom(''); setFilterTo('') }}
+                        className="w-full rounded-lg border border-border/50 bg-muted/50 px-3 py-1.5 text-sm text-right"
+                      />
+                    </div>
+                    {/* من تاريخ */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">من تاريخ</label>
+                      <input
+                        type="date"
+                        value={filterFrom}
+                        onChange={e => { setFilterFrom(e.target.value); setFilterDate('') }}
+                        className="w-full rounded-lg border border-border/50 bg-muted/50 px-3 py-1.5 text-sm text-right"
+                      />
+                    </div>
+                    {/* إلى تاريخ */}
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">إلى تاريخ</label>
+                      <input
+                        type="date"
+                        value={filterTo}
+                        onChange={e => { setFilterTo(e.target.value); setFilterDate('') }}
+                        className="w-full rounded-lg border border-border/50 bg-muted/50 px-3 py-1.5 text-sm text-right"
+                      />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-[#D4AF37]">{shift.totalRevenue.toFixed(0)} ج.م</p>
-                      <p className="text-[10px] text-muted-foreground">إيراد</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-bold text-red-400">{shift.totalExpenses.toFixed(0)} ج.م</p>
-                      <p className="text-[10px] text-muted-foreground">مصروفات</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={`text-sm font-bold ${shift.netRevenue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{shift.netRevenue.toFixed(0)} ج.م</p>
-                      <p className="text-[10px] text-muted-foreground">صافي</p>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => downloadExcel(shift)}
-                      className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
-                      <Download className="h-3.5 w-3.5" />XLSX
+                  {(filterDate || filterFrom || filterTo) && (
+                    <Button size="sm" variant="ghost" onClick={() => { setFilterDate(''); setFilterFrom(''); setFilterTo('') }}
+                      className="text-xs text-muted-foreground hover:text-foreground">
+                      مسح الفلتر ✕
                     </Button>
-                  </div>
-                </div>
-                {shift.notes && <p className="text-xs text-muted-foreground mt-2 border-t border-border/30 pt-2">ملاحظات: {shift.notes}</p>}
-              </CardContent>
-            </Card>
-          ))}
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* إحصائيات الفترة */}
+              {(filterDate || filterFrom || filterTo) && filteredShifts.length > 0 && (
+                <Card className="border-[#D4AF37]/20 bg-[#D4AF37]/5">
+                  <CardContent className="p-4">
+                    <p className="text-xs font-bold text-[#D4AF37] flex items-center gap-1 mb-3">
+                      <TrendingUp className="h-3.5 w-3.5" />إجمالي الفترة ({periodStats.count} شيفت)
+                    </p>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div>
+                        <p className="text-base font-bold text-[#D4AF37]">{periodStats.totalRev.toFixed(0)} ج.م</p>
+                        <p className="text-[10px] text-muted-foreground">إجمالي الإيراد</p>
+                      </div>
+                      <div>
+                        <p className="text-base font-bold text-red-400">{periodStats.totalExp.toFixed(0)} ج.م</p>
+                        <p className="text-[10px] text-muted-foreground">إجمالي المصروفات</p>
+                      </div>
+                      <div>
+                        <p className={`text-base font-bold ${periodStats.totalNet >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {periodStats.totalNet.toFixed(0)} ج.م
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">صافي الإيراد</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* قائمة الشيفتات */}
+              {filteredShifts.length === 0 ? (
+                <p className="text-center text-sm text-muted-foreground py-6">لا توجد شيفتات في هذه الفترة</p>
+              ) : (
+                filteredShifts.map(shift => (
+                  <Card key={shift.id} className="border-border/40 bg-card">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between flex-wrap gap-3">
+                        <div>
+                          <p className="text-sm font-medium">{new Date(shift.startedAt).toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(shift.startedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })} —
+                            {shift.endedAt ? new Date(shift.endedAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : ''}
+                            {' | '}{shift.startedBy}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-center">
+                            <p className="text-sm font-bold text-[#D4AF37]">{shift.totalRevenue.toFixed(0)} ج.م</p>
+                            <p className="text-[10px] text-muted-foreground">إيراد</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-bold text-red-400">{shift.totalExpenses.toFixed(0)} ج.م</p>
+                            <p className="text-[10px] text-muted-foreground">مصروفات</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-sm font-bold ${shift.netRevenue >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{shift.netRevenue.toFixed(0)} ج.م</p>
+                            <p className="text-[10px] text-muted-foreground">صافي</p>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => downloadExcel(shift)}
+                            className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
+                            <Download className="h-3.5 w-3.5" />XLSX
+                          </Button>
+                        </div>
+                      </div>
+                      {shift.notes && <p className="text-xs text-muted-foreground mt-2 border-t border-border/30 pt-2">ملاحظات: {shift.notes}</p>}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -261,9 +392,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
               <DialogTitle className="text-red-400 flex items-center gap-2">
                 <StopCircle className="h-5 w-5" />إنهاء الشيفت
               </DialogTitle>
-              <DialogDescription>
-                سيتم تسجيل الإيرادات والمصروفات وإغلاق الشيفت الحالي.
-              </DialogDescription>
+              <DialogDescription>سيتم تسجيل الإيرادات والمصروفات وإغلاق الشيفت الحالي.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="grid grid-cols-3 gap-3 text-center">

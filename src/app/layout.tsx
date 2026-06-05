@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "سرايا العرب | Saraya Al-Arab",
-  description: "مطعم سرايا العرب - أرقى المأكولات العربية | Fine Arabic Dining Experience",
-  keywords: ["سرايا العرب", "مطعم", "عربي", "مشويات", "Saraya Al-Arab", "restaurant", "Arabic dining"],
-  authors: [{ name: "Saraya Al-Arab" }],
+  title: "توب  | Top",
+  description: "مطعم توب  - أرقى المأكولات العربية | Fine Arabic Dining Experience",
+  keywords: ["توب ", "مطعم", "عربي", "مشويات", "Top", "restaurant", "Arabic dining"],
+  authors: [{ name: "Top" }],
   icons: {
     icon: "/logo.svg",
   },

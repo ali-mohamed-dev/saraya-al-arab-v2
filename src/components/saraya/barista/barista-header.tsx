@@ -28,7 +28,7 @@ export function BaristaHeader({
           </div>
           <div>
             <h1 className="text-lg font-bold text-blue-400">شاشة الباريستا</h1>
-            <p className="text-xs text-muted-foreground">سرايا العرب - المشروبات</p>
+            <p className="text-xs text-muted-foreground">توب - المشروبات</p>
           </div>
         </div>
 

@@ -15,11 +15,11 @@ export function MenuHeader({ onAdminClick, onTrackClick }: MenuHeaderProps) {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg overflow-hidden">
-            <img src="/logo.svg" alt="سرايا العرب" className="h-10 w-10 object-contain" />
+            <img src="/logo.svg" alt="توب " className="h-10 w-10 object-contain" />
           </div>
           <div>
-            <h1 className="text-gold-gradient text-xl font-bold">سرايا العرب</h1>
-            <p className="text-xs text-muted-foreground">Saraya Al-Arab</p>
+            <h1 className="text-gold-gradient text-xl font-bold">توب </h1>
+            <p className="text-xs text-muted-foreground">Top</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

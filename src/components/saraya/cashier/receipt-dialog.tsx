@@ -4,7 +4,7 @@ import { UtensilsCrossed, Receipt, BadgeCheck, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog'
 import type { Order } from '@/lib/saraya/types'
 import { ORDER_TYPE_MAP } from '@/lib/saraya/constants'
@@ -21,7 +21,6 @@ interface ReceiptDialogProps {
   onCloseTable: () => void
 }
 
-/** Compute add-ons total for an order item */
 function addOnsTotal(addOns: { price: number }[] | undefined): number {
   if (!addOns) return 0
   return addOns.reduce((sum, a) => sum + a.price, 0)
@@ -29,13 +28,13 @@ function addOnsTotal(addOns: { price: number }[] | undefined): number {
 
 function renderSingleReceipt(order: Order) {
   return (
-    <div className="bg-background text-foreground rounded-xl overflow-hidden receipt-content" dir="rtl">
+    <div className="bg-background text-foreground receipt-content" dir="rtl">
       <div className="bg-[#D4AF37]/10 border-b border-[#D4AF37]/30 px-6 py-5 text-center">
         <div className="flex items-center justify-center gap-2 mb-1">
           <UtensilsCrossed className="h-6 w-6 text-[#D4AF37]" />
-          <h2 className="text-2xl font-bold text-[#D4AF37]">سرايا العرب</h2>
+          <h2 className="text-2xl font-bold text-[#D4AF37]">توب</h2>
         </div>
-        <p className="text-xs text-muted-foreground">Saraya Al-Arab Restaurant</p>
+        <p className="text-xs text-muted-foreground">top Restaurant</p>
       </div>
       <div className="px-6 py-4 space-y-2 text-sm">
         <div className="flex justify-between"><span className="text-muted-foreground">رقم الطلب</span><span className="font-bold text-[#D4AF37]">#{order.orderNumber}</span></div>
@@ -59,13 +58,14 @@ function renderSingleReceipt(order: Order) {
           </thead>
           <tbody>
             {order.items.map(item => {
-              // BUG FIX: Add add-ons price to receipt line total
               const lineTotal = (item.price + addOnsTotal(item.addOns)) * item.quantity
               return (
                 <tr key={item.id} className="border-b border-border/10">
                   <td className="py-2.5">
                     <p className="font-medium">{item.mealTitleAr || item.mealTitle}</p>
-                    {item.addOns?.map((a, i) => <p key={i} className="text-xs text-muted-foreground">+ {a.titleAr || a.title} ({a.price.toFixed(2)} ج.م)</p>)}
+                    {item.addOns?.map((a, i) => (
+                      <p key={i} className="text-xs text-muted-foreground">+ {a.titleAr || a.title} ({a.price.toFixed(2)} ج.م)</p>
+                    ))}
                   </td>
                   <td className="py-2.5 text-center">{item.quantity}</td>
                   <td className="py-2.5 text-left">{lineTotal.toFixed(2)} ج.م</td>
@@ -85,7 +85,11 @@ function renderSingleReceipt(order: Order) {
           <span className="text-[#D4AF37]">{order.total.toFixed(2)} ج.م</span>
         </div>
       </div>
-      {order.notes && <div className="px-6 py-3"><p className="text-xs text-muted-foreground">ملاحظات: {order.notes}</p></div>}
+      {order.notes && (
+        <div className="px-6 py-3">
+          <p className="text-xs text-muted-foreground">ملاحظات: {order.notes}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -100,7 +104,6 @@ function renderTableReceipt(tableOrders: Order[]) {
   const aggregatedItems = tableOrders.flatMap((order) =>
     order.items.map((item) => ({
       ...item,
-      // BUG FIX: Use stable JSON.stringify for add-ons grouping key
       key: `${item.mealId}-${item.price}-${JSON.stringify(item.addOns ?? [])}`,
       orderNumber: order.orderNumber,
     }))
@@ -123,7 +126,7 @@ function renderTableReceipt(tableOrders: Order[]) {
   }, {})
 
   return (
-    <div className="bg-background text-foreground rounded-xl overflow-hidden receipt-content" dir="rtl">
+    <div className="bg-background text-foreground receipt-content" dir="rtl">
       <div className="bg-[#D4AF37]/10 border-b border-[#D4AF37]/30 px-6 py-5 text-center">
         <div className="flex items-center justify-center gap-2 mb-1">
           <UtensilsCrossed className="h-6 w-6 text-[#D4AF37]" />
@@ -154,7 +157,9 @@ function renderTableReceipt(tableOrders: Order[]) {
                   <td className="py-2.5">
                     <p className="font-medium">{item.mealTitleAr || item.mealTitle}</p>
                     {item.addOnsTotal > 0 && <p className="text-xs text-muted-foreground">+ إضافات</p>}
-                    <p className="text-[10px] text-muted-foreground">طلبات {Array.from(item.orderNumbers).map((num) => `#${num}`).join(' + ')}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      طلبات {Array.from(item.orderNumbers).map((num) => `#${num}`).join(' + ')}
+                    </p>
                   </td>
                   <td className="py-2.5 text-center">{item.quantity}</td>
                   <td className="py-2.5 text-left">{lineTotal.toFixed(2)} ج.م</td>
@@ -197,57 +202,77 @@ export function ReceiptDialog({
         onCloseTable()
       }
     }}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0 gap-0 bg-background border-[#D4AF37]/20">
+      {/* ↓ flex-col هنا هو جوهر الإصلاح */}
+      <DialogContent className="max-w-md h-[90vh] flex flex-col p-0 gap-0 bg-background border-[#D4AF37]/20 overflow-hidden">
         <DialogHeader className="sr-only">
           <DialogTitle>فاتورة الطلب</DialogTitle>
           <DialogDescription>تفاصيل فاتورة الطلب</DialogDescription>
         </DialogHeader>
-        {receiptOrder && (
-          <>
-            {renderSingleReceipt(receiptOrder)}
-            <DialogFooter className="p-4 pt-0 gap-2" dir="rtl">
+
+        {/* منطقة المحتوى — تتـscroll لوحدها */}
+        <div className="flex-1 overflow-y-auto">
+          {receiptOrder && renderSingleReceipt(receiptOrder)}
+          {receiptTableOrders && renderTableReceipt(receiptTableOrders)}
+        </div>
+
+        {/* الـ footer ثابت في الأسفل دايمًا */}
+        <div className="border-t border-[#D4AF37]/20 bg-background p-4 flex gap-2" dir="rtl">
+          {receiptOrder && (
+            <>
               {(receiptOrder.status === 'READY_TO_PAY' || (receiptOrder.status === 'READY' && receiptOrder.type !== 'DINE_IN')) && (
-                <Button onClick={() => onMarkAsPaid(receiptOrder.id)} disabled={updatingOrderId === receiptOrder.id}
-                  className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold">
-                  {updatingOrderId === receiptOrder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                <Button
+                  onClick={() => onMarkAsPaid(receiptOrder.id)}
+                  disabled={updatingOrderId === receiptOrder.id}
+                  className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold"
+                >
+                  {updatingOrderId === receiptOrder.id
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <BadgeCheck className="h-4 w-4" />}
                   تم الدفع
                 </Button>
               )}
-              <Button variant="outline" onClick={() => window.print()}
-                className="flex-1 gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
+              <Button
+                variant="outline"
+                onClick={() => window.print()}
+                className="flex-1 gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
+              >
                 <Receipt className="h-4 w-4" />طباعة
               </Button>
               <Button variant="ghost" onClick={onCloseOrder} className="gap-2 text-muted-foreground hover:text-red-400">
                 <X className="h-4 w-4" />إغلاق
               </Button>
-            </DialogFooter>
-          </>
-        )}
-        {receiptTableOrders && (
-          <>
-            {renderTableReceipt(receiptTableOrders)}
-            <DialogFooter className="p-4 pt-0 gap-2" dir="rtl">
-              {/* Show pay button when table is ready to pay or ready */}
+            </>
+          )}
+
+          {receiptTableOrders && (
+            <>
               {(receiptTableOrders.some(o => o.status === 'READY_TO_PAY') || receiptTableOrders.every(o => o.status === 'READY')) && (
-                <Button onClick={() => onMarkTableAsPaid(receiptTableOrders)} disabled={payingTable === receiptTableOrders[0]?.tableNumber}
-                  className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold">
-                  {payingTable === receiptTableOrders[0]?.tableNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                <Button
+                  onClick={() => onMarkTableAsPaid(receiptTableOrders)}
+                  disabled={payingTable === receiptTableOrders[0]?.tableNumber}
+                  className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold"
+                >
+                  {payingTable === receiptTableOrders[0]?.tableNumber
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <BadgeCheck className="h-4 w-4" />}
                   تم الدفع
                 </Button>
               )}
-              <Button variant="outline" onClick={() => window.print()}
-                className="flex-1 gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
+              <Button
+                variant="outline"
+                onClick={() => window.print()}
+                className="flex-1 gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10"
+              >
                 <Receipt className="h-4 w-4" />طباعة
               </Button>
               <Button variant="ghost" onClick={onCloseTable} className="gap-2 text-muted-foreground hover:text-red-400">
                 <X className="h-4 w-4" />إغلاق
               </Button>
-            </DialogFooter>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </DialogContent>
 
-      {/* Print stylesheet for receipts */}
       <style jsx global>{`
         @media print {
           body * { visibility: hidden; }

@@ -275,7 +275,7 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
 
       <footer className="mt-auto border-t border-[#D4AF37]/10 bg-muted/20 py-6">
         <div className="mx-auto max-w-7xl px-4 text-center">
-          <p className="text-sm text-muted-foreground">© 2024 سرايا العرب | Saraya Al-Arab - جميع الحقوق محفوظة</p>
+          <p className="text-sm text-muted-foreground">© 2024 توب  | Top - جميع الحقوق محفوظة</p>
           <p className="mt-1 text-xs text-muted-foreground/60">Fine Arabic Dining Experience</p>
         </div>
       </footer>

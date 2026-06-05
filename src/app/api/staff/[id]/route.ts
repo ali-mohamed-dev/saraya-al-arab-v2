@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
 
 // تعديل بيانات موظف
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -7,9 +8,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params
     const body = await req.json()
     const { role, password } = body
-    
+
     const data: Record<string, any> = {}
-    
+
     if (role) {
       const validRoles = ['ADMIN', 'WAITER', 'CASHIER', 'KITCHEN', 'BARISTA']
       if (!validRoles.includes(role)) {
@@ -17,14 +18,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
       data.role = role
     }
-    
+
     if (password) {
-      data.password = password
+      // hash the new password before saving
+      data.password = await bcrypt.hash(password.trim(), 12)
     }
 
     const staff = await db.admin.update({
       where: { id },
-      data
+      data,
+      select: { id: true, username: true, role: true, isActive: true, createdAt: true, updatedAt: true }
     })
 
     return NextResponse.json(staff)
@@ -37,15 +40,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    // منع حذف حساب الأدمن الأساسي (اختياري لكن يفضل)
     const target = await db.admin.findUnique({ where: { id } })
     if (target?.username === 'admin') {
       return NextResponse.json({ error: 'لا يمكن حذف حساب المدير الرئيسي' }, { status: 400 })
     }
 
-    await db.admin.delete({
-      where: { id }
-    })
+    await db.admin.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json({ error: 'فشل في حذف الموظف' }, { status: 500 })

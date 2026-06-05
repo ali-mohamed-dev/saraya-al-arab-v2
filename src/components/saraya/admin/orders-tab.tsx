@@ -13,6 +13,7 @@ import { OrderCard } from './order-card'
 import { OrderFilters } from './order-filters'
 import { CancelledOrders } from './cancelled-orders'
 import { CancelOrderDialog } from './cancel-order-dialog'
+import { ReceiptDialog } from '@/components/saraya/cashier/receipt-dialog'
 import type { Order, OrderStats, KitchenBaristaStatus } from '@/lib/saraya/types'
 
 interface OrdersTabProps {
@@ -24,113 +25,151 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   const lastPendingCountRef = useRef(0)
   const lastReadyToPayCountRef = useRef(0)
 
-  // Orders state
   const [orders, setOrders] = useState<Order[]>([])
   const [cancelledOrders, setCancelledOrders] = useState<Order[]>([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [orderStatusFilter, setOrderStatusFilter] = useState('ALL')
   const [orderTypeFilter, setOrderTypeFilter] = useState('ALL')
   const [orderStats, setOrderStats] = useState<OrderStats | null>(null)
-  const [currentShiftId, setCurrentShiftId] = useState<string | null>(null)
+  const [shiftIds, setShiftIds] = useState<string[]>([])
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
+  const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0])
+  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0])
 
-  // Relative timers hook (replaces manual timer state)
+  // ── Receipt dialog state ──
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
+
+  const today = new Date().toISOString().split('T')[0]
   const relativeTimers = useRelativeTimers(orders)
 
-  // Fetch current shift
-  const fetchCurrentShift = useCallback(async () => {
+  const fetchShiftsByRange = useCallback(async (from: string, to: string) => {
     try {
-      const res = await fetch('/api/shifts?current=true')
-      if (res.ok) {
-        const shift = await res.json()
-        setCurrentShiftId(shift?.id || null)
-      } else {
-        setCurrentShiftId(null)
+      if (from === today && to === today) {
+        const res = await fetch('/api/shifts?current=true')
+        if (res.ok) {
+          const shift = await res.json()
+          setShiftIds(shift?.id ? [shift.id] : [])
+          return
+        }
       }
-    } catch {
-      setCurrentShiftId(null)
-    }
-  }, [])
-
-  // Fetch orders
-  const fetchOrders = useCallback(async () => {
-    try {
-      const params = new URLSearchParams()
-      if (orderStatusFilter !== 'ALL') params.set('status', orderStatusFilter)
-      if (orderTypeFilter !== 'ALL') params.set('type', orderTypeFilter)
-      if (currentShiftId) params.set('shiftId', currentShiftId)
-      const res = await fetch(`/api/orders?${params.toString()}`)
+      const res = await fetch('/api/shifts')
       if (res.ok) {
-        const rawData = await res.json()
-        const allOrders = rawData.map(transformOrder)
-        // عرض الطلبات المفلترة، مع استثناء الملغية لأن لها قسماً خاصاً في الأسفل
-        setOrders(allOrders.filter((order) => order.status !== 'CANCELLED'))
+        const allShifts: any[] = await res.json()
+        const start = new Date(from); start.setHours(0, 0, 0, 0)
+        const end = new Date(to); end.setHours(23, 59, 59, 999)
+        const inRange = allShifts.filter(s => {
+          const d = new Date(s.createdAt)
+          return d >= start && d <= end
+        })
+        setShiftIds(inRange.map(s => s.id))
       }
     } catch (err) {
-      console.error('Failed to fetch orders:', err)
-    } finally {
+      console.error('Failed to fetch shifts:', err)
+      setShiftIds([])
     }
-  }, [orderStatusFilter, orderTypeFilter, currentShiftId])
+  }, [today])
+
+  const fetchOrders = useCallback(async () => {
+    if (shiftIds.length === 0) { setOrders([]); return }
+    try {
+      const allFetchedOrders: Order[] = []
+      await Promise.all(shiftIds.map(async (sid) => {
+        const params = new URLSearchParams()
+        if (orderStatusFilter !== 'ALL') params.set('status', orderStatusFilter)
+        if (orderTypeFilter !== 'ALL') params.set('type', orderTypeFilter)
+        params.set('shiftId', sid)
+        const res = await fetch(`/api/orders?${params.toString()}`)
+        if (res.ok) {
+          const rawData = await res.json()
+          allFetchedOrders.push(...rawData.map(transformOrder))
+        }
+      }))
+      setOrders(
+        allFetchedOrders
+          .filter((order) => order.status !== 'CANCELLED')
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      )
+    } catch (err) {
+      console.error('Failed to fetch orders:', err)
+    }
+  }, [orderStatusFilter, orderTypeFilter, shiftIds])
 
   const fetchCancelledOrders = useCallback(async () => {
-    if (!currentShiftId) {
-      setCancelledOrders([])
-      return
-    }
+    if (shiftIds.length === 0) { setCancelledOrders([]); return }
     try {
-      const params = new URLSearchParams({ status: 'CANCELLED', shiftId: currentShiftId })
-      const res = await fetch(`/api/orders?${params.toString()}`)
-      if (res.ok) {
-        const rawData = await res.json()
-        setCancelledOrders(rawData.map(transformOrder))
-      }
+      const allCancelled: Order[] = []
+      await Promise.all(shiftIds.map(async (sid) => {
+        const params = new URLSearchParams({ status: 'CANCELLED', shiftId: sid })
+        const res = await fetch(`/api/orders?${params.toString()}`)
+        if (res.ok) {
+          const rawData = await res.json()
+          allCancelled.push(...rawData.map(transformOrder))
+        }
+      }))
+      setCancelledOrders(allCancelled.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()))
     } catch (err) {
       console.error('Failed to fetch cancelled orders:', err)
     }
-  }, [currentShiftId])
+  }, [shiftIds])
 
-  const fetchStats = useCallback(async (shiftId?: string) => {
+  const fetchStats = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) { setOrderStats(null); return }
     try {
-      const params = new URLSearchParams()
-      if (shiftId) params.set('shiftId', shiftId)
-      const url = `/api/orders/stats${params.toString() ? `?${params.toString()}` : ''}`
-      const res = await fetch(url)
-      if (res.ok) setOrderStats(await res.json())
+      const statsResults = await Promise.all(ids.map(async (sid) => {
+        const res = await fetch(`/api/orders/stats?shiftId=${sid}`)
+        return res.ok ? await res.json() : null
+      }))
+      const aggregated = statsResults.reduce((acc, curr) => {
+        if (!curr) return acc
+        return {
+          pendingOrders:    (acc.pendingOrders    || 0) + (curr.pendingOrders    || 0),
+          confirmedOrders:  (acc.confirmedOrders  || 0) + (curr.confirmedOrders  || 0),
+          preparingOrders:  (acc.preparingOrders  || 0) + (curr.preparingOrders  || 0),
+          readyOrders:      (acc.readyOrders      || 0) + (curr.readyOrders      || 0),
+          readyToPayOrders: (acc.readyToPayOrders || 0) + (curr.readyToPayOrders || 0),
+          deliveredOrders:  (acc.deliveredOrders  || 0) + (curr.deliveredOrders  || 0),
+          cancelledOrders:  (acc.cancelledOrders  || 0) + (curr.cancelledOrders  || 0),
+          todayRevenue:     (acc.todayRevenue     || 0) + (curr.todayRevenue     || 0),
+          totalOrders:      (acc.totalOrders      || 0) + (curr.totalOrders      || 0),
+          todayOrders:      (acc.todayOrders      || 0) + (curr.todayOrders      || 0),
+        }
+      }, {
+        pendingOrders: 0,
+        confirmedOrders: 0,
+        preparingOrders: 0,
+        readyOrders: 0,
+        readyToPayOrders: 0,
+        deliveredOrders: 0,
+        cancelledOrders: 0,
+        todayRevenue: 0,
+        totalOrders: 0,
+        todayOrders: 0,
+      } as OrderStats)
+      setOrderStats(aggregated)
     } catch (err) {
       console.error('Failed to fetch stats:', err)
     }
   }, [])
 
-  // توحيد جلب البيانات في دالة واحدة لتقليل تكرار الاتصال بالسيرفر
   const fetchAllOrderData = useCallback(async () => {
     setLoadingOrders(true)
     try {
-      await Promise.all([
-        fetchOrders(),
-        fetchCancelledOrders(),
-        fetchStats(currentShiftId ?? undefined),
-      ])
+      await Promise.all([fetchOrders(), fetchCancelledOrders(), fetchStats(shiftIds)])
     } finally {
       setLoadingOrders(false)
     }
-  }, [fetchOrders, fetchCancelledOrders, fetchStats, currentShiftId])
+  }, [fetchOrders, fetchCancelledOrders, fetchStats, shiftIds])
 
-  useEffect(() => {
-    fetchCurrentShift()
-  }, [fetchCurrentShift])
+  useEffect(() => { fetchShiftsByRange(fromDate, toDate) }, [fromDate, toDate, fetchShiftsByRange])
+  useEffect(() => { fetchAllOrderData() }, [fetchAllOrderData])
 
-  useEffect(() => {
-    fetchAllOrderData()
-  }, [fetchAllOrderData])
-
-  // Print order with XSS fix
   const printOrder = (order: Order) => {
     const content = `
       <html>
         <head>
           <title>Order #${order.orderNumber}</title>
-          <style>body{font-family: sans-serif;direction: rtl;text-align: right;}table{width:100%;border-collapse: collapse;}td,th{padding:8px;border:1px solid #ddd;}h1,h2{margin:0 0 8px;} .muted{color:#666;font-size:0.9rem;}</style>
+          <style>body{font-family:sans-serif;direction:rtl;text-align:right;}table{width:100%;border-collapse:collapse;}td,th{padding:8px;border:1px solid #ddd;}h1,h2{margin:0 0 8px;}.muted{color:#666;font-size:0.9rem;}</style>
         </head>
         <body>
           <h1>فاتورة الطلب #${order.orderNumber}</h1>
@@ -158,13 +197,9 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       </html>
     `
     const printWindow = window.open('', '_blank', 'width=700,height=900')
-    if (printWindow) {
-      printWindow.document.write(content)
-      printWindow.document.close()
-    }
+    if (printWindow) { printWindow.document.write(content); printWindow.document.close() }
   }
 
-  // Update order status with proper typing (fix: replace `any` with proper type)
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
@@ -177,12 +212,10 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
         payload.kitchenAccess = true
       }
       if (newStatus === 'PREPARING') {
-        if (order?.kitchenStatus === 'PENDING' || order?.kitchenStatus === 'CONFIRMED') {
+        if (order?.kitchenStatus === 'PENDING' || order?.kitchenStatus === 'CONFIRMED')
           payload.kitchenStatus = 'PREPARING' as KitchenBaristaStatus
-        }
-        if (order?.baristaStatus === 'PENDING' || order?.baristaStatus === 'CONFIRMED') {
+        if (order?.baristaStatus === 'PENDING' || order?.baristaStatus === 'CONFIRMED')
           payload.baristaStatus = 'PREPARING' as KitchenBaristaStatus
-        }
       }
       if (newStatus === 'READY') {
         payload.kitchenStatus = 'READY' as KitchenBaristaStatus
@@ -201,10 +234,9 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
-        // Reset status filter to ALL so the order stays visible after status change
-        if (orderStatusFilter !== 'ALL') {
-          setOrderStatusFilter('ALL')
-        }
+        if (orderStatusFilter !== 'ALL') setOrderStatusFilter('ALL')
+        // لو الـ receipt dialog مفتوح على نفس الأوردر، أغلقه بعد التحديث
+        if (receiptOrder?.id === orderId) setReceiptOrder(null)
         await fetchAllOrderData()
       } else {
         const data = await res.json().catch(() => ({}))
@@ -217,44 +249,29 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
     }
   }
 
-  // Polling-based real-time
   useEffect(() => {
-    if (!currentShiftId) return
+    if (shiftIds.length === 0 || fromDate !== today || toDate !== today || !shiftIds[0]) return
+    const pollShiftId = shiftIds[0]
 
     const initializeCounts = async () => {
       try {
-        const pendingParams = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
-        const readyToPayParams = new URLSearchParams({ status: 'READY_TO_PAY', shiftId: currentShiftId })
-
         const [pendingRes, readyRes] = await Promise.all([
-          fetch(`/api/orders?${pendingParams.toString()}`),
-          fetch(`/api/orders?${readyToPayParams.toString()}`),
+          fetch(`/api/orders?${new URLSearchParams({ status: 'PENDING', shiftId: pollShiftId })}`),
+          fetch(`/api/orders?${new URLSearchParams({ status: 'READY_TO_PAY', shiftId: pollShiftId })}`),
         ])
-
         if (!pendingRes.ok || !readyRes.ok) return
-
-        const pendingOrders = (await pendingRes.json()).map(transformOrder)
-        const readyToPayOrders = (await readyRes.json()).map(transformOrder)
-
-        lastPendingCountRef.current = pendingOrders.length
-        lastReadyToPayCountRef.current = readyToPayOrders.length
-      } catch (err) {
-        console.error('Failed to initialize polling counts:', err)
-      }
+        lastPendingCountRef.current = (await pendingRes.json()).length
+        lastReadyToPayCountRef.current = (await readyRes.json()).length
+      } catch (err) { console.error('Failed to initialize polling counts:', err) }
     }
-
     initializeCounts()
 
     const pollInterval = setInterval(async () => {
       try {
-        const pendingParams = new URLSearchParams({ status: 'PENDING', shiftId: currentShiftId })
-        const readyToPayParams = new URLSearchParams({ status: 'READY_TO_PAY', shiftId: currentShiftId })
-
         const [pendingRes, readyRes] = await Promise.all([
-          fetch(`/api/orders?${pendingParams.toString()}`),
-          fetch(`/api/orders?${readyToPayParams.toString()}`),
+          fetch(`/api/orders?${new URLSearchParams({ status: 'PENDING', shiftId: pollShiftId })}`),
+          fetch(`/api/orders?${new URLSearchParams({ status: 'READY_TO_PAY', shiftId: pollShiftId })}`),
         ])
-
         if (!pendingRes.ok || !readyRes.ok) return
 
         const pendingOrders = (await pendingRes.json()).map(transformOrder)
@@ -264,55 +281,48 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
         const readyToPayChanged = readyToPayOrders.length !== lastReadyToPayCountRef.current
 
         if (pendingChanged || readyToPayChanged) {
-          if (pendingChanged) {
-            const newOrder = pendingOrders[0]
-            toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${newOrder.orderNumber}` })
-          }
-          if (readyToPayChanged && readyToPayOrders.length > lastReadyToPayCountRef.current) {
+          if (pendingChanged) toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${pendingOrders[0].orderNumber}` })
+          if (readyToPayChanged && readyToPayOrders.length > lastReadyToPayCountRef.current)
             toast({ title: 'طلب جاهز للدفع', description: `عدد الطلبات الجاهزة للدفع الآن ${readyToPayOrders.length}` })
-          }
 
           lastPendingCountRef.current = pendingOrders.length
           lastReadyToPayCountRef.current = readyToPayOrders.length
           fetchOrders()
-          fetchStats(currentShiftId)
+          fetchStats([pollShiftId])
         }
-      } catch (err) {
-        console.error('Polling error:', err)
-      }
+      } catch (err) { console.error('Polling error:', err) }
     }, 5000)
 
     return () => clearInterval(pollInterval)
-  }, [currentShiftId, fetchOrders, fetchStats, toast])
+  }, [shiftIds, fromDate, toDate, today, fetchOrders, fetchStats, toast])
 
   return (
     <div className="space-y-6">
-      {/* Stats Cards */}
-      <OrderStatsGrid stats={orderStats} currentShiftId={currentShiftId} />
+      <OrderStatsGrid stats={orderStats} currentShiftId={shiftIds.length > 0 ? shiftIds[0] : null} />
 
-      {/* Filters */}
       <div className="space-y-3">
         <OrderFilters
           statusFilter={orderStatusFilter}
           typeFilter={orderTypeFilter}
+          fromDate={fromDate}
+          toDate={toDate}
           onStatusFilterChange={setOrderStatusFilter}
           onTypeFilterChange={setOrderTypeFilter}
-          onRefresh={() => fetchAllOrderData()}
+          onFromDateChange={setFromDate}
+          onToDateChange={setToDate}
+          onRefresh={fetchAllOrderData}
         />
         <div className="flex justify-end">
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchAllOrderData()}
+            variant="outline" size="sm"
+            onClick={fetchAllOrderData}
             className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8"
           >
-            <RefreshCw className="h-3 w-3" />
-            تحديث يدوي
+            <RefreshCw className="h-3 w-3" />تحديث يدوي
           </Button>
         </div>
       </div>
 
-      {/* Orders List */}
       {loadingOrders ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" />
@@ -334,20 +344,31 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
                 onUpdateStatus={updateOrderStatus}
                 onCancel={setCancelTarget}
                 onPrint={printOrder}
+                onViewReceipt={setReceiptOrder}
               />
             ))}
           </AnimatePresence>
         </div>
       )}
 
-      {/* Cancelled Orders */}
       <CancelledOrders orders={cancelledOrders} />
 
-      {/* Cancel Order Dialog */}
       <CancelOrderDialog
         order={cancelTarget}
         onClose={() => setCancelTarget(null)}
         onConfirm={(orderId) => updateOrderStatus(orderId, 'CANCELLED')}
+      />
+
+      {/* ── Receipt Dialog (نفس بتاع الكاشير) ── */}
+      <ReceiptDialog
+        receiptOrder={receiptOrder}
+        receiptTableOrders={null}
+        updatingOrderId={updatingOrderId}
+        payingTable={null}
+        onMarkAsPaid={(orderId) => updateOrderStatus(orderId, 'DELIVERED')}
+        onMarkTableAsPaid={() => {}}
+        onCloseOrder={() => setReceiptOrder(null)}
+        onCloseTable={() => {}}
       />
     </div>
   )

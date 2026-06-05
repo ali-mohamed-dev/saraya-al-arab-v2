@@ -116,13 +116,13 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>اسم المصروف</Label>
-              <Input placeholder="مثال: خامات، رواتب..." value={expenseTitle} onChange={e => { setExpenseTitle(e.target.value); setError(null) }}
+              <Label>المبلغ (ج.م)</Label>
+              <Input type="number" placeholder="0.00" value={expenseAmount} onChange={e => { setExpenseAmount(e.target.value); setError(null) }}
                 className="bg-muted/50 border-border/50 text-right" />
             </div>
             <div className="space-y-2">
-              <Label>المبلغ (ج.م)</Label>
-              <Input type="number" placeholder="0.00" value={expenseAmount} onChange={e => { setExpenseAmount(e.target.value); setError(null) }}
+              <Label>اسم المصروف</Label>
+              <Input placeholder="مثال: خامات، رواتب..." value={expenseTitle} onChange={e => { setExpenseTitle(e.target.value); setError(null) }}
                 className="bg-muted/50 border-border/50 text-right" />
             </div>
           </div>

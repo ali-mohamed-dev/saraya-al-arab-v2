@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
 
 // جلب قائمة الموظفين
 export async function GET() {
@@ -20,7 +21,6 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    // FIX: trim whitespace before validation to prevent ghost usernames
     const username = (body.username || '').trim()
     const password = (body.password || '').trim()
     const role     = (body.role     || '').trim()
@@ -34,17 +34,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'صلاحية غير صالحة' }, { status: 400 })
     }
 
-    // FIX: return 409 Conflict (not 400) for duplicate username so frontend can handle it distinctly
     const existing = await db.admin.findUnique({ where: { username } })
     if (existing) {
       return NextResponse.json({ error: 'اسم المستخدم موجود بالفعل، جرب اسماً آخر' }, { status: 409 })
     }
 
+    // hash the password before saving
+    const hashedPassword = await bcrypt.hash(password, 12)
+
     const staff = await db.admin.create({
-      data: { username, password, role }
+      data: { username, password: hashedPassword, role }
     })
 
-    return NextResponse.json(staff, { status: 201 })
+    // never return the hashed password to the client
+    const { password: _omit, ...safeStaff } = staff
+    return NextResponse.json(safeStaff, { status: 201 })
   } catch (error) {
     console.error('Staff creation error:', error)
     return NextResponse.json({ error: 'فشل في إضافة الموظف' }, { status: 500 })

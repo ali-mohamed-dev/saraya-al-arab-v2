@@ -29,6 +29,9 @@ export function MenuManagementTab() {
   const [meals, setMeals] = useState<Meal[]>([])
   const [loadingMeals, setLoadingMeals] = useState(true)
 
+  // Categories state
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+
   // Search & filter
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState('الكل')
@@ -56,6 +59,18 @@ export function MenuManagementTab() {
   }, [])
 
   useEffect(() => { fetchMeals() }, [fetchMeals])
+
+  // Fetch categories
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await fetch('/api/categories')
+      if (res.ok) setCategories(await res.json())
+    } catch (err) {
+      console.error('Failed to fetch categories:', err)
+    }
+  }, [])
+
+  useEffect(() => { fetchCategories() }, [fetchCategories])
 
   // Bug fix: useMemo for filteredMeals
   const filteredMeals = useMemo(() => {
@@ -152,7 +167,7 @@ export function MenuManagementTab() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {['الكل', ...CATEGORIES.map(c => c.value)].map((cat) => (
+            {['الكل', ...categories.map(c => c.name)].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setFilterCategory(cat)}

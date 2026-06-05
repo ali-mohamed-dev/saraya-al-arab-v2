@@ -18,7 +18,7 @@ export function ShiftClosedScreen({ onLogout }: ShiftClosedScreenProps) {
             </div>
             <div>
               <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الويتر</h1>
-              <p className="text-xs text-muted-foreground">سرايا العرب</p>
+              <p className="text-xs text-muted-foreground">توب </p>
             </div>
           </div>
           <div>
