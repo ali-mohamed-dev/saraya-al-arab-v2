@@ -51,10 +51,16 @@ export function OrderSummary({ items, summary }: OrderSummaryProps) {
             <span className="text-muted-foreground">المجموع الفرعي</span>
             <span>{summary.subtotal.toFixed(2)} ج.م</span>
           </div>
-          {summary.tax > 0 && (
+          {summary.serviceCharge > 0 && (
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">الضريبة</span>
-              <span>{summary.tax.toFixed(2)} ج.م</span>
+              <span className="text-muted-foreground">رسوم الخدمة (12%)</span>
+              <span>{summary.serviceCharge.toFixed(2)} ج.م</span>
+            </div>
+          )}
+          {summary.deliveryFee > 0 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">رسوم التوصيل</span>
+              <span>{summary.deliveryFee.toFixed(2)} ج.م</span>
             </div>
           )}
           {summary.discount > 0 && (

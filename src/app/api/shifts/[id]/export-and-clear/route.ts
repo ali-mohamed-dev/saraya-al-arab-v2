@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateShiftExcel } from '@/lib/saraya/excel-export'
 
 // POST /api/shifts/[id]/export-and-clear
-// هذا المسار مسؤول عن إنهاء الوردية وحساب الإيرادات النهائية
+// إنهاء الوردية وحساب الإيرادات النهائية وتصدير Excel
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,11 +12,11 @@ export async function POST(
     const { id } = await params
     const { endedBy, notes } = await request.json()
 
-    // 1. جلب بيانات الوردية الحالية مع الطلبات والمصاريف لحساب الأرقام النهائية
+    // 1. جلب بيانات الوردية الحالية
     const shift = await db.shift.findUnique({
       where: { id },
       include: {
-        orders: { where: { status: 'DELIVERED' } },
+        orders: { where: { status: 'DELIVERED' }, include: { items: true } },
         expenses: true,
       },
     })
@@ -25,37 +25,51 @@ export async function POST(
       return NextResponse.json({ error: 'الوردية غير موجودة' }, { status: 404 })
     }
 
+    // لا يمكن إغلاق وردية مغلقة بالفعل
+    if (shift.status === 'CLOSED') {
+      return NextResponse.json({ error: 'الوردية مغفلة بالفعل' }, { status: 400 })
+    }
+
     const totalRevenue = shift.orders.reduce((sum, o) => sum + o.total, 0)
     const totalExpenses = shift.expenses.reduce((sum, e) => sum + e.amount, 0)
     const netRevenue = totalRevenue - totalExpenses
 
-    // 2. تحديث الوردية إلى حالة CLOSED (أو closed حسب قاعدة البيانات)
-    // نستخدم 'as any' لتفادي تعارض أنواع الـ Enum القديمة والجديدة
+    // 2. تحديث الوردية إلى حالة CLOSED
     const updatedShift = await db.shift.update({
       where: { id },
       data: {
-        status: 'CLOSED' as any,
+        status: 'CLOSED',
         endedAt: new Date(),
-        endedBy: endedBy || 'admin',
-        notes: notes || '',
+        endedBy: endedBy || null,
+        notes: notes || null,
         totalRevenue,
         totalExpenses,
         netRevenue,
       },
     })
 
-    // 3. توليد ملف الـ Excel
+    // 3. توليد ملف الـ Excel مع بيانات كاملة
     const xlsxBuffer = await generateShiftExcel({
       shift: {
-        startedAt: updatedShift.createdAt,
-        endedAt: updatedShift.endedAt,
-        startedBy: updatedShift.startedBy || 'admin',
-        endedBy: updatedShift.endedBy,
-        notes: updatedShift.notes,
+        startedAt: updatedShift.startedAt,
+        endedAt: updatedShift.endedAt ?? undefined,
+        startedBy: updatedShift.startedBy ?? '',
+        endedBy: updatedShift.endedBy ?? undefined,
+        notes: updatedShift.notes ?? undefined,
       },
       orders: shift.orders.map(o => ({
+        orderNumber: o.orderNumber ?? 0,
+        type: o.type,
         status: o.status,
-        total: o.total || 0
+        tableNumber: o.tableNumber,
+        total: o.total || 0,
+        customerName: o.customerName,
+        createdAt: o.createdAt,
+        items: o.items?.map((it) => ({
+          name: it.mealTitle,
+          qty: it.quantity,
+          price: it.price,
+        })),
       })),
       expenses: shift.expenses.map(e => ({
         title: e.description || '',

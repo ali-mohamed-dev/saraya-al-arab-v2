@@ -2,11 +2,11 @@
   <defs>
     <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#D4AF37"/>
-      <stop offset="100%" style="stop-color:#C9A431"/>
+      <stop offset="50%" style="stop-color:#F5D76E"/>
+      <stop offset="100%" style="stop-color:#D4AF37"/>
     </linearGradient>
   </defs>
   <circle cx="50" cy="50" r="45" fill="none" stroke="url(#gold)" stroke-width="3"/>
-  <text x="50" y="40" text-anchor="middle" font-family="serif" font-size="18" fill="#D4AF37" font-weight="bold">سرايا</text>
-  <text x="50" y="60" text-anchor="middle" font-family="serif" font-size="14" fill="#D4AF37">العرب</text>
-  <line x1="25" y1="70" x2="75" y2="70" stroke="#D4AF37" stroke-width="1.5"/>
+  <text x="50" y="58" text-anchor="middle" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="url(#gold)">T</text>
+  <text x="50" y="74" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="url(#gold)">TOP</text>
 </svg>

@@ -85,15 +85,22 @@ export async function PUT(
       })
 
       const addedSubtotal = itemsToAdd.reduce((sum, item) => sum + item.price * item.quantity, 0)
-      const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
-      const addedServiceCharge = Math.round(addedSubtotal * ratio * 100) / 100
+      // رسوم الخدمة بس للصالة (DINE_IN) - الديلفري والتاكواوي ملهمش رسوم خدمة
+      const addedServiceCharge = existing.type === 'DINE_IN' ? Math.round(addedSubtotal * 0.12 * 100) / 100 : 0
 
       updateData.subtotal = existing.subtotal + addedSubtotal
       updateData.serviceCharge = existing.serviceCharge + addedServiceCharge
       updateData.total = existing.total + addedSubtotal + addedServiceCharge
 
-      if (existing.status === 'READY') {
+      if (existing.status === 'READY' || existing.status === 'READY_TO_PAY') {
         updateData.status = 'PREPARING'
+        // Reset kitchen/barista statuses so they see the new items
+        const hasKitchenItems = itemsToAdd.some(i => i.preparationArea === 'KITCHEN' || i.preparationArea === 'BARISTA')
+        if (hasKitchenItems) {
+          updateData.kitchenStatus = 'PENDING'
+          updateData.baristaStatus = 'PENDING'
+          updateData.kitchenAccess = true
+        }
       }
 
       await Promise.all(createOrUpdatePromises)
@@ -101,7 +108,7 @@ export async function PUT(
 
     if (Array.isArray(body.removedItemIds) && body.removedItemIds.length > 0) {
       await db.orderItem.deleteMany({
-        where: { id: { in: body.removedItemIds } },
+        where: { id: { in: body.removedItemIds }, orderId: id },
       })
     }
 
@@ -149,8 +156,8 @@ export async function PUT(
         } catch { /* ignore malformed addOns */ }
         return sum + (item.price + addOnsTotal) * item.quantity
       }, 0)
-      const ratio = existing.subtotal > 0 ? existing.serviceCharge / existing.subtotal : 0.1
-      const finalServiceCharge = Math.round(finalSubtotal * ratio * 100) / 100
+      // رسوم الخدمة بس للصالة (DINE_IN) - الديلفري والتاكواوي ملهمش رسوم خدمة
+      const finalServiceCharge = existing.type === 'DINE_IN' ? Math.round(finalSubtotal * 0.12 * 100) / 100 : 0
       updateData.subtotal = finalSubtotal
       updateData.serviceCharge = finalServiceCharge
       updateData.total = finalSubtotal + finalServiceCharge
@@ -187,6 +194,11 @@ export async function DELETE(
 
     if (existing.status === 'CANCELLED') {
       return NextResponse.json({ error: 'Order is already cancelled' }, { status: 400 })
+    }
+
+    // لا يمكن إلغاء طلب تم تسليمه
+    if (existing.status === 'DELIVERED') {
+      return NextResponse.json({ error: 'لا يمكن إلغاء طلب تم تسليمه بالفعل' }, { status: 400 })
     }
 
     const order = await db.order.update({

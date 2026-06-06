@@ -17,8 +17,9 @@ export interface CartItemType {
   quantity: number
   imageUrl: string
   addOns: SelectedAddOn[]
-  preparationArea: string  // FIX: was missing — caused all items to be sent to KITCHEN
-  category: string         // FIX: was missing — needed for order merge matching
+  preparationArea: string
+  category: string
+  addedAt?: number  // timestamp when item was added
 }
 
 interface CartStore {
@@ -40,30 +41,42 @@ function getAddOnKey(addOns: SelectedAddOn[]): string {
     .join(',')
 }
 
+// Auto-expire cart items older than 2 hours
+const CART_EXPIRY_MS = 2 * 60 * 60 * 1000
+
+function cleanExpiredItems(items: CartItemType[]): CartItemType[] {
+  const now = Date.now()
+  return items.filter((item) => {
+    if (!item.addedAt) return true
+    return now - item.addedAt < CART_EXPIRY_MS
+  })
+}
+
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
       items: [],
       addItem: (item) =>
         set((state) => {
+          const cleanItems = cleanExpiredItems(state.items)
           const addOnKey = getAddOnKey(item.addOns)
-          const existing = state.items.find(
+          const existing = cleanItems.find(
             (i) => i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
           )
           if (existing) {
             return {
-              items: state.items.map((i) =>
+              items: cleanItems.map((i) =>
                 i.mealId === item.mealId && getAddOnKey(i.addOns) === addOnKey
                   ? { ...i, quantity: i.quantity + (item.quantity || 1) }
                   : i
               ),
             }
           }
-          return { items: [...state.items, { ...item, quantity: item.quantity || 1 }] }
+          return { items: [...cleanItems, { ...item, quantity: item.quantity || 1, addedAt: Date.now() }] }
         }),
       removeItem: (mealId, addOnKey) =>
         set((state) => ({
-          items: state.items.filter(
+          items: cleanExpiredItems(state.items).filter(
             (i) => !(i.mealId === mealId && getAddOnKey(i.addOns) === addOnKey)
           ),
         })),
@@ -71,27 +84,36 @@ export const useCartStore = create<CartStore>()(
         set((state) => ({
           items:
             quantity <= 0
-              ? state.items.filter(
+              ? cleanExpiredItems(state.items).filter(
                   (i) => !(i.mealId === mealId && getAddOnKey(i.addOns) === addOnKey)
                 )
-              : state.items.map((i) =>
+              : cleanExpiredItems(state.items).map((i) =>
                   i.mealId === mealId && getAddOnKey(i.addOns) === addOnKey
                     ? { ...i, quantity }
                     : i
                 ),
         })),
       clearCart: () => set({ items: [] }),
-      getTotalItems: () => get().items.reduce((sum, item) => sum + item.quantity, 0),
+      getTotalItems: () => cleanExpiredItems(get().items).reduce((sum, item) => sum + item.quantity, 0),
       getTotalPrice: () => {
-          const subtotal = get().items.reduce((sum, item) => {
+          const cleanItems = cleanExpiredItems(get().items)
+          const subtotal = cleanItems.reduce((sum, item) => {
             const addOnTotal = item.addOns?.reduce((s, a) => s + a.price, 0) || 0
             return sum + (item.price + addOnTotal) * item.quantity
           }, 0)
-          return subtotal * (1 + SERVICE_CHARGE_RATE)
+          return subtotal
         },
     }),
     {
       name: 'saraya-cart',
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        if (version === 0) {
+          // Old cart without timestamps - clear it to avoid stale data
+          return { items: [] }
+        }
+        return persistedState
+      },
     }
   )
 )

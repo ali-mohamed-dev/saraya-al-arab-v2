@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useCartStore } from '@/store/cart-store'
 import { CartStep, OrderType, TableInfoType, OrderSummaryType } from './types'
 import { CartItemsList } from './cart-items-list'
@@ -9,7 +9,8 @@ import { TableInfoForm } from './table-info-form'
 import { OrderSummary } from './order-summary'
 import { OrderSuccess } from './order-success'
 import { ArrowRight, ArrowLeft, ShoppingCart, X, User, Phone, MapPin, StickyNote } from 'lucide-react'
-import { SERVICE_CHARGE_RATE } from '@/lib/saraya/constants'
+import { SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
+import { toast } from 'sonner'
 
 function getAddOnKey(addOns: { id: string }[]): string {
   if (!addOns || addOns.length === 0) return ''
@@ -35,17 +36,96 @@ export function CartSummary({ onClose }: CartSummaryProps) {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  // ─── Auto-fill بيانات العميل من localStorage ───
+  useEffect(() => {
+    const savedPhone = localStorage.getItem('saraya-customer-phone')
+    if (savedPhone) setCustomerPhone(savedPhone)
+    const savedName = localStorage.getItem('saraya-customer-name')
+    if (savedName) setCustomerName(savedName)
+    const savedAddress = localStorage.getItem('saraya-delivery-address')
+    if (savedAddress) setDeliveryAddress(savedAddress)
+  }, [])
+
+  // ─── Auto-fill table info from localStorage + active order ───
+  // لو البراوزر عمل أوردر قبل كده على نفس الطاولة والطلب لسه شغال
+  // نعمل auto-fill و auto-verify لكود الطاولة
+  useEffect(() => {
+    if (orderType !== 'dine-in') return
+
+    const savedTableNum = localStorage.getItem('saraya-table-number')
+    const savedTableCode = localStorage.getItem('saraya-table-code')
+    const activeOrderId = localStorage.getItem('saraya-active-order-id')
+
+    // لو فيه بيانات طاولة محفوظة من QR أو أوردر سابق
+    if (savedTableNum && savedTableCode) {
+      setTableInfo(prev => ({
+        ...prev,
+        tableNumber: savedTableNum,
+        tableCode: savedTableCode.toUpperCase(),
+      }))
+
+      // لو فيه أوردر نشط، نتأكد إنه على نفس الطاولة ونعمل auto-verify
+      if (activeOrderId) {
+        const autoVerify = async () => {
+          try {
+            // نتأكد إن الأوردر النشط على نفس الطاولة
+            const orderRes = await fetch(`/api/orders/${activeOrderId}`)
+            if (orderRes.ok) {
+              const order = await orderRes.json()
+              if (order.tableNumber === savedTableNum && !['DELIVERED', 'CANCELLED'].includes(order.status)) {
+                // الأوردر نشط على نفس الطاولة → نعمل verify تلقائي
+                const verifyRes = await fetch('/api/tables/verify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ tableNumber: savedTableNum, code: savedTableCode.toUpperCase() }),
+                })
+                const verifyData = await verifyRes.json()
+                if (verifyRes.ok && verifyData.valid) {
+                  setTableInfo(prev => ({ ...prev, isValid: true }))
+                }
+              }
+            }
+          } catch {
+            // سكّت الأخطاء - المستخدم ممكن يعمل verify يدوي
+          }
+        }
+        autoVerify()
+      } else {
+        // مفيش أوردر نشط بس البيانات محفوظة → نعمل verify عادي
+        const autoVerify = async () => {
+          try {
+            const verifyRes = await fetch('/api/tables/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tableNumber: savedTableNum, code: savedTableCode.toUpperCase() }),
+            })
+            const verifyData = await verifyRes.json()
+            if (verifyRes.ok && verifyData.valid) {
+              setTableInfo(prev => ({ ...prev, isValid: true }))
+            }
+          } catch {
+            // سكّت الأخطاء
+          }
+        }
+        autoVerify()
+      }
+    }
+  }, [orderType])
+
   const summary: OrderSummaryType = useMemo(() => {
     const subtotal = items.reduce((sum, item) => {
       const addOnsTotal = item.addOns?.reduce((aSum, a) => aSum + a.price, 0) || 0
       return sum + (item.price + addOnsTotal) * item.quantity
     }, 0)
     
-    const tax = subtotal * SERVICE_CHARGE_RATE
+    // رسوم الخدمة بس للصالة (dine-in)
+    const serviceCharge = orderType === 'dine-in' ? subtotal * SERVICE_CHARGE_RATE : 0
+    // رسوم التوصيل للديلفري فقط
+    const deliveryFee = orderType === 'delivery' ? DELIVERY_FEE : 0
     const discount = 0
-    const total = subtotal + tax - discount
-    return { subtotal, tax, discount, total }
-  }, [items])
+    const total = subtotal + serviceCharge + deliveryFee - discount
+    return { subtotal, serviceCharge, deliveryFee, discount, total }
+  }, [items, orderType])
 
   const canProceedToConfirm = () => {
     if (items.length === 0) return false
@@ -57,11 +137,16 @@ export function CartSummary({ onClose }: CartSummaryProps) {
   }
 
   const submitOrder = async () => {
+    // تحقق من الحد الأدنى للطلب
+    if (summary.total < 20) {
+      toast.error('الحد الأدنى للطلب 20 ج.م')
+      return
+    }
     if (!canProceedToConfirm()) return
     setSubmitting(true)
     try {
       const orderData = {
-        type: orderType?.toUpperCase().replace('-', '_'), // تحويل dine-in إلى DINE_IN لتتوافق مع الداتابيز
+        type: ({ 'dine-in': 'DINE_IN', 'takeaway': 'TAKEAWAY', 'delivery': 'DELIVERY' } as Record<string, string>)[orderType!] || orderType?.toUpperCase(),
         tableNumber: orderType === 'dine-in' ? tableInfo.tableNumber : null,
         tableCode: orderType === 'dine-in' ? tableInfo.tableCode : null,
         customerName: customerName.trim() || 'عميل خارجي',
@@ -80,7 +165,8 @@ export function CartSummary({ onClose }: CartSummaryProps) {
         })),
         notes: notes.trim() || null,
         subtotal: summary.subtotal,
-        serviceCharge: summary.tax,
+        serviceCharge: summary.serviceCharge,
+        deliveryFee: summary.deliveryFee,
         total: summary.total,
       }
       const res = await fetch('/api/orders', {
@@ -95,16 +181,27 @@ export function CartSummary({ onClose }: CartSummaryProps) {
           if (orderData.customerPhone) {
             localStorage.setItem('saraya-customer-phone', orderData.customerPhone)
           }
+          if (customerName.trim() && customerName.trim() !== 'عميل خارجي') {
+            localStorage.setItem('saraya-customer-name', customerName.trim())
+          }
+          if (orderType === 'delivery' && deliveryAddress.trim()) {
+            localStorage.setItem('saraya-delivery-address', deliveryAddress.trim())
+          }
+          // حفظ بيانات الطاولة في localStorage عشان المرات الجاية
+          if (orderType === 'dine-in' && tableInfo.tableNumber && tableInfo.tableCode) {
+            localStorage.setItem('saraya-table-number', tableInfo.tableNumber)
+            localStorage.setItem('saraya-table-code', tableInfo.tableCode.toUpperCase())
+          }
         }
         clearCart()
         setStep('success')
       } else {
         const data = await res.json().catch(() => ({}))
-        alert(data.message || data.error || 'حدث خطأ في إرسال الطلب')
+        toast.error(data.message || data.error || 'حدث خطأ في إرسال الطلب')
       }
     } catch (err) {
       console.error('Submit order error:', err)
-      alert('حدث خطأ في الاتصال، حاول مرة أخرى')
+      toast.error('حدث خطأ في الاتصال، حاول مرة أخرى')
     } finally {
       setSubmitting(false)
     }
@@ -276,6 +373,14 @@ export function CartSummary({ onClose }: CartSummaryProps) {
             متابعة الطلب
             <ArrowLeft className="h-4 w-4" />
           </button>
+        )}
+        {step === 'cart' && items.length === 0 && (
+          <div className="text-center py-2">
+            <div className="inline-flex items-center gap-2 rounded-full bg-[#D4AF37]/8 border border-[#D4AF37]/15 px-4 py-2 text-xs font-medium text-[#D4AF37]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#D4AF37]/50" />
+              اختر من القائمة لبدء الطلب
+            </div>
+          </div>
         )}
         {step !== 'cart' && (
           <button onClick={() => { if (step === 'confirm') setStep('order-type'); else if (step === 'order-type') setStep('cart') }} className="w-full flex items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted transition-colors">

@@ -78,7 +78,7 @@ function renderSingleReceipt(order: Order) {
       <Separator className="bg-border/30" />
       <div className="px-6 py-4 space-y-2 text-sm">
         <div className="flex justify-between"><span className="text-muted-foreground">المجموع الفرعي</span><span>{order.subtotal.toFixed(2)} ج.م</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">رسوم الخدمة</span><span>{order.serviceCharge.toFixed(2)} ج.م</span></div>
+        {order.serviceCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">رسوم الخدمة</span><span>{order.serviceCharge.toFixed(2)} ج.م</span></div>}
         <Separator className="bg-border/30 my-1" />
         <div className="flex justify-between text-lg font-bold">
           <span className="text-[#D4AF37]">الإجمالي</span>
@@ -172,7 +172,7 @@ function renderTableReceipt(tableOrders: Order[]) {
       <Separator className="bg-border/30" />
       <div className="px-6 py-4 space-y-2 text-sm">
         <div className="flex justify-between"><span className="text-muted-foreground">المجموع الفرعي</span><span>{subtotal.toFixed(2)} ج.م</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">رسوم الخدمة</span><span>{serviceCharge.toFixed(2)} ج.م</span></div>
+        {serviceCharge > 0 && <div className="flex justify-between"><span className="text-muted-foreground">رسوم الخدمة</span><span>{serviceCharge.toFixed(2)} ج.م</span></div>}
         <Separator className="bg-border/30 my-1" />
         <div className="flex justify-between text-lg font-bold">
           <span className="text-[#D4AF37]">الإجمالي</span>

@@ -15,6 +15,7 @@ import type { CartItemType } from '@/lib/saraya/types'
 
 interface CartSectionProps {
   cart: CartItemType[]
+  orderType: string
   notes: string
   setNotes: (v: string) => void
   removeFromCart: (mealId: string) => void
@@ -24,6 +25,7 @@ interface CartSectionProps {
 
 export function CartSection({
   cart,
+  orderType,
   notes,
   setNotes,
   removeFromCart,
@@ -38,7 +40,8 @@ export function CartSection({
       item.addOns.reduce((aSum, a) => aSum + a.price * item.quantity, 0),
     0
   )
-  const serviceCharge = Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100
+  // رسوم الخدمة بس للصالة (DINE_IN) - الديلفري والتاكواوي ملهمش رسوم خدمة
+  const serviceCharge = orderType === 'DINE_IN' ? Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100 : 0
   const total = subtotal + serviceCharge
 
   return (
@@ -135,10 +138,12 @@ export function CartSection({
             <span>المجموع الفرعي</span>
             <span>{subtotal.toFixed(2)} ج.م</span>
           </div>
-          <div className="flex justify-between text-muted-foreground">
-            <span>خدمة ({Math.round(SERVICE_CHARGE_RATE * 100)}%)</span>
-            <span>{serviceCharge.toFixed(2)} ج.م</span>
-          </div>
+          {serviceCharge > 0 && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>خدمة ({Math.round(SERVICE_CHARGE_RATE * 100)}%)</span>
+              <span>{serviceCharge.toFixed(2)} ج.م</span>
+            </div>
+          )}
           <Separator className="bg-border/30" />
           <div className="flex justify-between font-bold text-[#D4AF37]">
             <span>الإجمالي</span>

@@ -35,13 +35,13 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{
           __html: `
             try {
-              if (localStorage.getItem('theme') === '"light"' || localStorage.getItem('theme') === 'light') {
-                document.documentElement.classList.remove('dark');
-              } else {
+              if (localStorage.getItem('theme') === '"dark"' || localStorage.getItem('theme') === 'dark') {
                 document.documentElement.classList.add('dark');
+              } else {
+                document.documentElement.classList.remove('dark');
               }
             } catch(e) {
-              document.documentElement.classList.add('dark');
+              document.documentElement.classList.remove('dark');
             }
           `
         }} />

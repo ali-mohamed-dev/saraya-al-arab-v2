@@ -1,10 +1,15 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-// GET /api/promotions - Fetch all promotions (with related meals)
-export async function GET() {
+// GET /api/promotions - Fetch promotions (with related meals)
+// Supports ?active=true to filter only active promotions
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const activeOnly = searchParams.get('active') === 'true'
+
     const promotions = await db.promotion.findMany({
+      where: activeOnly ? { isActive: true } : undefined,
       orderBy: { createdAt: 'desc' },
       include: {
         mealItems: { include: { meal: true } },
@@ -64,7 +69,7 @@ export async function POST(request: NextRequest) {
         isActive:     isActive !== undefined ? isActive : true,
         mealItems:
           Array.isArray(mealIds) && mealIds.length > 0
-            ? { create: [...new Set(mealIds)].map((mealId: string) => ({ mealId })) }
+            ? { create: mealIds.map((mealId: string) => ({ mealId })) }
             : undefined,
       },
       include: {

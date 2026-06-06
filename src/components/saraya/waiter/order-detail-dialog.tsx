@@ -57,6 +57,7 @@ export function OrderDetailDialog({
   // حساب الإجماليات بشكل آمن وتلقائي
   const totals = useMemo(() => {
     const items = editableOrderItems || selectedOrder?.items || []
+    const orderType = selectedOrder?.type || 'DINE_IN'
     const subtotal = items.reduce((sum, item) => { // Ensure add-ons are included in subtotal calculation
       // Ensure addOns is an array before reducing
       // The type definition for OrderItem.addOns is already correct: { title: string; titleAr: string; price: number }[]
@@ -64,7 +65,8 @@ export function OrderDetailDialog({
       const addOnsPrice = item.addOns?.reduce((aSum, a) => aSum + a.price, 0) || 0
       return sum + (item.price + addOnsPrice) * item.quantity
     }, 0)
-    const serviceCharge = Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100
+    // رسوم الخدمة بس للصالة (DINE_IN) - الديلفري والتاكواوي ملهمش رسوم خدمة
+    const serviceCharge = orderType === 'DINE_IN' ? Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100 : 0
     const total = subtotal + serviceCharge
     return { subtotal, serviceCharge, total }
   }, [editableOrderItems, selectedOrder])
@@ -385,10 +387,12 @@ export function OrderDetailDialog({
                 <span>المجموع الفرعي</span>
                 <span>{totals.subtotal.toFixed(2)} ج.م</span>
               </div>
-              <div className="flex justify-between text-muted-foreground">
-                <span>رسوم الخدمة</span>
-                <span>{totals.serviceCharge.toFixed(2)} ج.م</span>
-              </div>
+              {totals.serviceCharge > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>رسوم الخدمة</span>
+                  <span>{totals.serviceCharge.toFixed(2)} ج.م</span>
+                </div>
+              )}
               <Separator className="bg-border/30" />
               <div className="flex justify-between font-bold text-[#D4AF37] text-base">
                 <span>الإجمالي</span>

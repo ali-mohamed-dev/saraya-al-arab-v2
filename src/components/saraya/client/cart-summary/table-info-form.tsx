@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { TableInfoType } from './types'
 import { CheckCircle2, XCircle, Loader2, Hash, KeyRound } from 'lucide-react'
 
@@ -12,6 +12,13 @@ interface TableInfoFormProps {
 export function TableInfoForm({ tableInfo, onUpdate }: TableInfoFormProps) {
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
+
+  // لما البيانات تتعبأ تلقائياً من localStorage، نعمل verify تلقائي
+  useEffect(() => {
+    if (tableInfo.tableNumber && tableInfo.tableCode && tableInfo.isValid) {
+      setError('')
+    }
+  }, [tableInfo.isValid])
 
   const verifyTableCode = async () => {
     if (!tableInfo.tableNumber.trim() || !tableInfo.tableCode.trim()) {
@@ -36,6 +43,9 @@ export function TableInfoForm({ tableInfo, onUpdate }: TableInfoFormProps) {
       if (res.ok && data.valid) {
         onUpdate({ isValid: true })
         setError('')
+        // حفظ بيانات الطاولة في localStorage
+        localStorage.setItem('saraya-table-number', tableInfo.tableNumber)
+        localStorage.setItem('saraya-table-code', tableInfo.tableCode.toUpperCase())
       } else {
         onUpdate({ isValid: false })
         setError(data.message || 'كود الطاولة غير صحيح')
@@ -118,7 +128,7 @@ export function TableInfoForm({ tableInfo, onUpdate }: TableInfoFormProps) {
         {tableInfo.isValid && !error && (
           <div className="flex items-center gap-2 text-green-600 text-sm">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
-            تم التحقق من الطاولة بنجاح
+            تم التحقق من الطاولة بنجاح ✓
           </div>
         )}
       </div>

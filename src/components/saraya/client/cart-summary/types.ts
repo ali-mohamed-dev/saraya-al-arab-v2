@@ -10,7 +10,8 @@ export interface TableInfoType {
 
 export interface OrderSummaryType {
   subtotal: number
-  tax: number
+  serviceCharge: number
+  deliveryFee: number
   discount: number
   total: number
 }

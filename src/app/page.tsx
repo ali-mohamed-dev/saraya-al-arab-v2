@@ -18,7 +18,7 @@ function getViewForRole(role: string): View {
     case 'CASHIER': return 'cashier-panel'
     case 'KITCHEN': return 'kitchen-panel'
     case 'BARISTA': return 'barista-panel'
-    default: return 'admin-panel'
+    default: return 'menu'
   }
 }
 

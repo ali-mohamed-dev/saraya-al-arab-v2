@@ -16,6 +16,7 @@ interface Promotion {
   mealId: string | null
   buttonText: string
   buttonTextAr: string
+  mealItems?: Array<{ id: string; mealId: string; meal: { title: string; titleAr: string } }>
   isActive: boolean
 }
 
@@ -67,10 +68,13 @@ export function PromotionsSlider({ activeOnly = true }: PromotionsSliderProps) {
   }
 
   const handleOrderNow = (promo: Promotion) => {
+    const mealsList = promo.mealItems?.map(mi => mi.meal?.titleAr || mi.meal?.title).join(' + ')
+    const displayTitleAr = mealsList ? `${promo.titleAr || promo.title} (${mealsList})` : (promo.titleAr || promo.title)
+
     addItem({
       mealId: promo.mealId || promo.id,
       title: promo.title,
-      titleAr: promo.titleAr,
+      titleAr: displayTitleAr,
       price: promo.price,
       quantity: 1,
       imageUrl: promo.bannerImageUrl,

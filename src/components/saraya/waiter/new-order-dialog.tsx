@@ -119,6 +119,7 @@ export function NewOrderDialog({
           {/* Right: Cart summary */}
           <CartSection
             cart={cart}
+            orderType={orderType}
             notes={notes}
             setNotes={setNotes}
             removeFromCart={removeFromCart}

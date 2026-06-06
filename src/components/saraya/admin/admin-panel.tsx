@@ -3,7 +3,7 @@
 import { useAdminAuth } from '@/lib/saraya/hooks'
 import {
   UtensilsCrossed, Plus, Megaphone, ClipboardList,
-  DollarSign, Users, Armchair
+  DollarSign, Users, Armchair, Tag
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminHeader } from './admin-header'
@@ -14,6 +14,7 @@ import { OrdersTab } from './orders-tab'
 import { ShiftManagement } from './shift-management'
 import { StaffManagement } from './staff-management'
 import { TableManagement } from './table-management'
+import { CategoriesTab } from './categories-tab'
 
 interface AdminPanelProps {
   onLogout: () => void
@@ -65,6 +66,11 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
               <span className="hidden sm:inline">الموظفين</span>
               <span className="sm:hidden">الموظفين</span>
             </TabsTrigger>
+            <TabsTrigger value="categories" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+              <Tag className="h-4 w-4" />
+              <span className="hidden sm:inline">التصنيفات</span>
+              <span className="sm:hidden">التصنيفات</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="menu">
@@ -93,6 +99,10 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
 
           <TabsContent value="staff">
             <StaffManagement />
+          </TabsContent>
+
+          <TabsContent value="categories">
+            <CategoriesTab />
           </TabsContent>
         </Tabs>
       </main>

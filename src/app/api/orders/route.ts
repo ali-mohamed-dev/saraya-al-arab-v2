@@ -49,11 +49,11 @@ export async function POST(request: NextRequest) {
       items,
       subtotal,
       serviceCharge,
+      deliveryFee,
       total,
       shiftId,
     } = body
 
-    // ─── Validation ──────────────────────────────────────────
     if (!type || !items || items.length === 0) {
       return NextResponse.json(
         { error: 'Order type and items are required' },
@@ -61,7 +61,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 0a) Check store settings (taking orders toggle)
     const storeSettings = await db.storeSettings.findUnique({ where: { id: 'default' } })
     if (storeSettings && !storeSettings.takingOrders) {
       return NextResponse.json(
@@ -70,7 +69,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 0b) Check if there's an open shift
     const openShift = await db.shift.findFirst({
       where: { status: 'OPEN' },
       orderBy: { createdAt: 'desc' },
@@ -88,6 +86,31 @@ export async function POST(request: NextRequest) {
     if (!minCheck.allowed) {
       return NextResponse.json(
         { error: `الحد الأدنى للطلب ${getMinOrderValue()} جنيه` },
+        { status: 400 }
+      )
+    }
+
+    // 1b) Verify all meals or promotions exist
+    const itemIds = Array.from(new Set(items.map((i: any) => i.mealId).filter(Boolean))) as string[]
+    
+    const [existingMeals, existingPromos] = await Promise.all([
+      db.meal.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true }
+      }),
+      db.promotion.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true }
+      })
+    ])
+
+    const foundIds = new Set([...existingMeals.map(m => m.id), ...existingPromos.map(p => p.id)])
+
+    if (foundIds.size !== itemIds.length) {
+      return NextResponse.json(
+        { 
+          error: 'بعض الأطباق أو العروض في سلتك لم تعد موجودة، يرجى تحديث الصفحة' 
+        },
         { status: 400 }
       )
     }
@@ -183,7 +206,7 @@ export async function POST(request: NextRequest) {
     if (type === 'DINE_IN' && tableNumber) {
       const existingOrder = await db.order.findFirst({
         where: {
-          tableNumber: tableNumber,
+          tableNumber: String(tableNumber),
           status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
         },
         include: { items: true },
@@ -211,6 +234,8 @@ export async function POST(request: NextRequest) {
         }>
 
         const itemUpdates: Array<Promise<unknown>> = []
+        const promoIds = new Set(existingPromos.map(p => p.id))
+
         const createData: Array<{
           orderId: string
           mealId: string
@@ -222,6 +247,7 @@ export async function POST(request: NextRequest) {
           preparationArea: string
           category: string
           imageUrl: string
+          isPromotion: boolean
           lastAddedQuantity: number
         }> = []
 
@@ -257,8 +283,8 @@ export async function POST(request: NextRequest) {
             itemUpdates.push(db.orderItem.update({
               where: { id: existingItem.id },
               data: {
-                quantity: existingItem.quantity + item.quantity,
-                lastAddedQuantity: item.quantity,
+                quantity: { increment: item.quantity },
+                addedQuantity: item.quantity,
               },
             }))
           } else {
@@ -273,7 +299,8 @@ export async function POST(request: NextRequest) {
               category: item.category,
               preparationArea: item.preparationArea,
               imageUrl: item.imageUrl,
-              lastAddedQuantity: item.quantity,
+              isPromotion: promoIds.has(item.mealId),
+              addedQuantity: item.quantity,
             })
           }
         })
@@ -287,12 +314,18 @@ export async function POST(request: NextRequest) {
         const hasNewBaristaItems = normalizedIncomingItems.some(i => i.preparationArea === 'BARISTA')
         const needsNewPreparation = hasNewKitchenItems || hasNewBaristaItems
 
+        const safeSubtotal = parseFloat(String(subtotal)) || 0
+        const safeServiceCharge = parseFloat(String(serviceCharge)) || 0
+        const safeDeliveryFee = parseFloat(String(deliveryFee)) || 0
+        const safeTotal = parseFloat(String(total)) || 0
+
         const updatedOrder = await db.order.update({
           where: { id: existingOrder.id },
           data: {
-            subtotal: existingOrder.subtotal + parseFloat(subtotal),
-            serviceCharge: existingOrder.serviceCharge + parseFloat(serviceCharge),
-            total: existingOrder.total + parseFloat(total),
+            subtotal: { increment: safeSubtotal },
+            serviceCharge: { increment: safeServiceCharge },
+            deliveryFee: { increment: safeDeliveryFee },
+            total: { increment: safeSubtotal + safeServiceCharge + safeDeliveryFee },
             notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
             status: needsNewPreparation && (existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY')
               ? 'PREPARING'
@@ -322,6 +355,9 @@ export async function POST(request: NextRequest) {
       })
       const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1001
 
+      // Determine which items are promotions
+      const promoIds = new Set(existingPromos.map(p => p.id))
+
       const orderData: any = {
         orderNumber,
         type,
@@ -333,12 +369,13 @@ export async function POST(request: NextRequest) {
         notes: notes || '',
         subtotal: parseFloat(subtotal) || 0,
         serviceCharge: parseFloat(serviceCharge) || 0,
+        deliveryFee: parseFloat(deliveryFee) || 0,
         total: parseFloat(total) || 0,
         status: 'PENDING',
         kitchenStatus: 'PENDING',
         baristaStatus: 'PENDING',
         kitchenAccess: false, // Staff must confirm before kitchen sees it
-        shiftId: shiftId || openShift.id,
+        shiftId: openShift.id,
         items: {
           create: items.map(
             (item: {
@@ -351,17 +388,21 @@ export async function POST(request: NextRequest) {
               category?: string
               preparationArea?: string
               imageUrl?: string
-            }) => ({
-              mealId: item.mealId,
-              mealTitle: item.mealTitle,
-              mealTitleAr: item.mealTitleAr || '',
-              price: parseFloat(String(item.price)),
-              quantity: parseInt(String(item.quantity)),
-              addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
-              category: item.category || '',
-              preparationArea: item.preparationArea || 'KITCHEN',
-              imageUrl: item.imageUrl || '',
-            })
+            }) => {
+              const isPromo = promoIds.has(item.mealId)
+              return {
+                mealId: item.mealId,
+                mealTitle: item.mealTitle,
+                mealTitleAr: item.mealTitleAr || '',
+                price: parseFloat(String(item.price)),
+                quantity: parseInt(String(item.quantity)),
+                addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+                category: item.category || '',
+                preparationArea: item.preparationArea || 'KITCHEN',
+                imageUrl: item.imageUrl || '',
+                isPromotion: isPromo,
+              }
+            }
           ),
         },
       }

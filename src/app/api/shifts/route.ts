@@ -23,11 +23,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(shift || null)
     }
 
-    // توحيد البحث عن الشيفت الحالي أو جلب الكل في محاولة واحدة لمنع تكرار الكود
     if (current === 'true') {
       const shift = await db.shift.findFirst({
-        // استخدام 'as any' مؤقتاً لتجنب انهيار النوع إذا كانت قاعدة البيانات تحتوي على قيم قديمة
-        where: { status: { in: ['OPEN', 'active'] } as any },
+        where: { status: 'OPEN' },
         orderBy: { createdAt: 'desc' },
       })
       return NextResponse.json(shift || null)
@@ -49,17 +47,46 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { startedBy } = body
 
-    // إغلاق أي وردية مفتوحة أولاً لضمان عدم وجود تكرار (OPEN أو active)
-    await db.shift.updateMany({
-      where: { status: { in: ['OPEN', 'active'] } as any },
-      data: { status: 'CLOSED', endedAt: new Date() },
-    })
+    // استخدام transaction لمنع إنشاء أكتر من شيفت مفتوح في نفس الوقت
+    const shift = await db.$transaction(async (tx) => {
+      // إغلاق أي شيفت مفتوح مع حساب الإيرادات
+      const openShifts = await tx.shift.findMany({
+        where: { status: 'OPEN' },
+      })
 
-    const shift = await db.shift.create({
-      data: {
-        startedBy: startedBy || 'admin',
-        status: 'OPEN',
-      },
+      for (const openShift of openShifts) {
+        // حساب الإيرادات قبل الإغلاق
+        const orders = await tx.order.findMany({
+          where: { shiftId: openShift.id, status: 'DELIVERED' },
+          select: { total: true },
+        })
+        const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0)
+
+        const expenses = await tx.expense.findMany({
+          where: { shiftId: openShift.id },
+          select: { amount: true },
+        })
+        const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+
+        await tx.shift.update({
+          where: { id: openShift.id },
+          data: {
+            status: 'CLOSED',
+            endedAt: new Date(),
+            totalRevenue,
+            totalExpenses,
+            netRevenue: totalRevenue - totalExpenses,
+          },
+        })
+      }
+
+      // إنشاء الشيفت الجديد
+      return tx.shift.create({
+        data: {
+          startedBy: startedBy || 'admin',
+          status: 'OPEN',
+        },
+      })
     })
 
     return NextResponse.json(shift, { status: 201 })

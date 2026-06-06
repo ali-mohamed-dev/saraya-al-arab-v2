@@ -35,7 +35,7 @@ export async function GET(
 
     const xlsxBuffer = await generateShiftExcel({
       shift: {
-        startedAt: shift.createdAt,
+        startedAt: shift.startedAt,
         endedAt: shift.endedAt ?? undefined,
         startedBy: shift.startedBy ?? '',
         endedBy: shift.endedBy ?? undefined,

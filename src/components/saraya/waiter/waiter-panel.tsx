@@ -305,8 +305,12 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       0
     ), [cart])
 
-  const serviceCharge = useMemo(() => Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100, [subtotal])
-  const total = useMemo(() => subtotal + serviceCharge, [subtotal, serviceCharge])
+  // رسوم الخدمة بس للصالة (DINE_IN) - الديلفري والتاكواوي ملهمش رسوم خدمة
+  const serviceCharge = useMemo(() =>
+    orderType === 'DINE_IN' ? Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100 : 0
+  , [subtotal, orderType])
+  const deliveryFee = useMemo(() => 0, []) // لا رسوم توصيل من الويتر
+  const total = useMemo(() => subtotal + serviceCharge + deliveryFee, [subtotal, serviceCharge, deliveryFee])
 
   // ── Submit new order ───────────────────────────────────────────────────
   const handleSubmitOrder = useCallback(async () => {

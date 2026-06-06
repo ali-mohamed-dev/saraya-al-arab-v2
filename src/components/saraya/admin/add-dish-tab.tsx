@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Loader2, Trash2, Edit2, Check, X, Settings2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Loader2, Tag } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,11 +33,8 @@ const defaultMealForm: NewMealForm = {
 export function AddDishTab() {
   const { toast } = useToast()
 
-  // Category Management State
+  // Category state (fetched from API)
   const [categories, setCategories] = useState<{ id: string; name: string; icon: string }[]>([])
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [newCategoryIcon, setNewCategoryIcon] = useState('')
-  const [showCategoryManager, setShowCategoryManager] = useState(false)
 
   const [newMeal, setNewMeal] = useState<NewMealForm>({ ...defaultMealForm })
   const [creating, setCreating] = useState(false)
@@ -58,46 +55,7 @@ export function AddDishTab() {
     }
   }
 
-  const handleAddCategory = async () => {
-    if (!newCategoryName.trim()) return
-    try {
-      const res = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newCategoryName, icon: newCategoryIcon }),
-      })
-      if (res.ok) {
-        const newCat = await res.json()
-        await fetchCategories()
-        setNewCategoryName('')
-        setNewCategoryIcon('')
-        setNewMeal(prev => ({ ...prev, category: newCat.name }))
-        toast({ title: 'تم الإضافة', description: 'تم إضافة التصنيف بنجاح' })
-      } else {
-        const data = await res.json()
-        toast({ title: 'خطأ', description: data.error || 'فشل في إضافة التصنيف', variant: 'destructive' })
-      }
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل في إضافة التصنيف', variant: 'destructive' })
-    }
-  }
 
-  const handleDeleteCategory = async (id: string, name: string) => {
-    try {
-      const res = await fetch(`/api/categories/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        await fetchCategories()
-        if (newMeal.category === name) {
-          setNewMeal(prev => ({ ...prev, category: '' }))
-        }
-        toast({ title: 'تم الحذف', description: 'تم حذف التصنيف بنجاح' })
-      } else {
-        toast({ title: 'خطأ', description: 'فشل في حذف التصنيف', variant: 'destructive' })
-      }
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل في حذف التصنيف', variant: 'destructive' })
-    }
-  }
 
   const handleCreateMeal = async () => {
     const effectiveTitle = newMeal.title || newMeal.titleAr
@@ -135,53 +93,11 @@ export function AddDishTab() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Category Management Toggle */}
-        <Button
-          variant="outline"
-          onClick={() => setShowCategoryManager(!showCategoryManager)}
-          className="w-full flex items-center justify-between border-[#D4AF37]/20 bg-[#D4AF37]/5 text-[#D4AF37] hover:bg-[#D4AF37]/10"
-        >
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4" />
-            إدارة التصنيفات
-          </div>
-          {showCategoryManager ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
-
-        {showCategoryManager && (
-          <div className="rounded-xl border border-border/50 bg-muted/30 p-4 space-y-4">
-            <div className="flex gap-2">
-              <Input
-                value={newCategoryIcon}
-                onChange={(e) => setNewCategoryIcon(e.target.value)}
-                placeholder="🍔"
-                className="bg-background border-border/50 w-20 text-center"
-              />
-              <Input
-                value={newCategoryName}
-                onChange={(e) => setNewCategoryName(e.target.value)}
-                placeholder="اسم التصنيف الجديد..."
-                className="bg-background border-border/50 flex-1"
-                onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-              />
-              <Button onClick={handleAddCategory} size="sm" className="bg-[#D4AF37] text-black hover:bg-[#C9A431]">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {categories.map((cat) => (
-                <div key={cat.id} className="flex items-center gap-2 rounded-lg border border-border/50 bg-background px-3 py-1.5">
-                  <span className="text-sm">{cat.icon} {cat.name}</span>
-                  <button
-                    onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                    className="text-muted-foreground hover:text-red-500 transition-colors border-r border-border/50 pr-1 mr-1"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
+        {/* Categories hint */}
+        {categories.length === 0 && (
+          <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-400">
+            <Tag className="h-4 w-4 flex-shrink-0" />
+            لا توجد تصنيفات بعد — اذهب إلى تاب &quot;التصنيفات&quot; لإضافتها أولاً
           </div>
         )}
 

@@ -104,14 +104,17 @@ export function MenuManagementTab() {
   }
 
   const handleDeleteMeal = async (id: string) => {
-    try {
-      const res = await fetch(`/api/meals/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast({ title: 'تم الحذف', description: 'تم حذف الطبق بنجاح' })
-        fetchMeals()
-      }
+  try {
+    const res = await fetch(`/api/meals/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast({ title: 'تم الحذف', description: 'تم حذف الطبق بنجاح' })
+      fetchMeals()
+    } else {
+      const data = await res.json().catch(() => ({ error: 'فشل في حذف الطبق' }))
+      toast({ title: 'خطأ', description: data.error || 'فشل في حذف الطبق', variant: 'destructive' })
+    }
     } catch {
-      toast({ title: 'خطأ', description: 'فشل في حذف الطبق', variant: 'destructive' })
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
     }
     setDeleteTarget(null)
   }

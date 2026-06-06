@@ -11,6 +11,15 @@ export async function PUT(
     const body = await request.json()
     const { endedBy, notes } = body
 
+    // التحقق من وجود الشيفت وأنه مفتوح
+    const shift = await db.shift.findUnique({ where: { id } })
+    if (!shift) {
+      return NextResponse.json({ error: 'الشيفت غير موجود' }, { status: 404 })
+    }
+    if (shift.status === 'CLOSED') {
+      return NextResponse.json({ error: 'الشيفت مغلق بالفعل' }, { status: 400 })
+    }
+
     // Calculate revenue from DELIVERED orders in this shift
     const orders = await db.order.findMany({
       where: { shiftId: id, status: 'DELIVERED' },
@@ -26,20 +35,20 @@ export async function PUT(
     const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
     const netRevenue = totalRevenue - totalExpenses
 
-    const shift = await db.shift.update({
+    const updatedShift = await db.shift.update({
       where: { id },
       data: {
         status: 'CLOSED',
         endedAt: new Date(),
-        endedBy: endedBy || '',
+        endedBy: endedBy || null,
         totalRevenue,
         totalExpenses,
         netRevenue,
-        notes: notes || '',
+        notes: notes || null,
       },
     })
 
-    return NextResponse.json(shift)
+    return NextResponse.json(updatedShift)
   } catch (error) {
     console.error('Error closing shift:', error)
     return NextResponse.json({ error: 'Failed to close shift' }, { status: 500 })

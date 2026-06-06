@@ -34,7 +34,6 @@ model Meal {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   addons          AddOn[]
-  orderItems      OrderItem[]
   promotionMeals  PromotionMeal[]  
 
 }
@@ -117,6 +116,7 @@ model Order {
   pickupTime      String      @default("")
   subtotal        Float       @default(0)
   serviceCharge   Float       @default(0)
+  deliveryFee     Float       @default(0)
   total           Float       @default(0)
   kitchenAccess   Boolean     @default(false)
   kitchenStatus   String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, CANCELLED
@@ -133,7 +133,6 @@ model Order {
   @@index([shiftId])
   @@index([createdAt])
 }
-
 model OrderItem {
   id                String   @id @default(cuid())
   orderId           String
@@ -144,14 +143,14 @@ model OrderItem {
   price             Float
   preparationArea   String   @default("KITCHEN")
   imageUrl          String   @default("")
-  addOns            String   @default("[]") // JSON string of add-ons
+  addOns            String   @default("[]")
   category          String   @default("")
+  isPromotion       Boolean  @default(false)
   lastAddedQuantity Int      @default(0)
-  addedQuantity     Int      @default(0)
+  addedQuantity     Int      @default(0)     // <-- السطر ده اللي ناقصك
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  meal              Meal     @relation(fields: [mealId], references: [id])
 
   @@index([orderId])
   @@index([mealId])

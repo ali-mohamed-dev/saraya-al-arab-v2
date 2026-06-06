@@ -65,4 +65,5 @@ export const EXPENSE_CATEGORIES = [
 ]
 
 export const SERVICE_CHARGE_RATE = 0.12
+export const DELIVERY_FEE = 25
 export const REFRESH_INTERVAL = 5000

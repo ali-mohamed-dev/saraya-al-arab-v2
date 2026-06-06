@@ -67,6 +67,12 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    const meal = await db.meal.findUnique({ where: { id } })
+    if (!meal) {
+      return NextResponse.json({ error: 'Meal not found' }, { status: 404 })
+    }
+    await db.promotionMeal.deleteMany({ where: { mealId: id } })
+    await db.addOn.deleteMany({ where: { mealId: id } })
     await db.meal.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {

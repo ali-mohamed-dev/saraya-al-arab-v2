@@ -1,13 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Search, ShoppingCart, Flame, ShoppingBag, X, Phone } from 'lucide-react'
+import { Search, Flame, ShoppingBasket, Phone } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
-import { Input as PhoneInput } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 import { HeroCarousel } from '@/components/saraya/client/hero-carousel'
@@ -17,23 +16,11 @@ import { MenuGrid } from '@/components/saraya/client/menu-grid'
 import { CartSummary } from '@/components/saraya/client/cart-summary'
 import { OrderDetail } from '@/components/saraya/client/order-detail'
 import { OrderTracking } from '@/components/saraya/client/order-tracking'
+import { PromotionCard } from '@/components/saraya/client/promotion-card'
 import { useCartStore } from '@/store/cart-store'
-import { type Meal } from '@/lib/saraya/types'
+import { type Meal, type Promotion } from '@/lib/saraya/types'
 import { toast } from 'sonner'
-import { motion, AnimatePresence } from 'framer-motion'
-
-interface Promotion {
-  id: string
-  bannerImageUrl: string
-  title: string
-  titleAr: string
-  description: string
-  descriptionAr: string
-  price: number
-  mealId: string | null
-  buttonTextAr: string
-  isActive: boolean
-}
+import { motion } from 'framer-motion'
 
 interface ClientMenuProps {
   onAdminClick: () => void
@@ -44,18 +31,24 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
   const [loading, setLoading] = useState(true)
   const [activeCategory, setActiveCategory] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // ── Meal detail state ──
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null)
   const [orderDetailOpen, setOrderDetailOpen] = useState(false)
+
+  // ── Promotion detail state ──
+  const [selectedPromotion, setSelectedPromotion] = useState<Promotion | null>(null)
+  const [promotionDetailOpen, setPromotionDetailOpen] = useState(false)
+
   const [promotions, setPromotions] = useState<Promotion[]>([])
   const [promotionsLoading, setPromotionsLoading] = useState(false)
-  const addItem = useCartStore((s) => s.addItem)
+
   const cartItems = useCartStore((s) => s.items)
   const [cartOpen, setCartOpen] = useState(false)
-  const [takingOrders, setTakingOrders] = useState<boolean | null>(null) // null = loading
+  const [takingOrders, setTakingOrders] = useState<boolean | null>(null)
   const [storeMessage, setStoreMessage] = useState('')
 
   const totalItems = cartItems.reduce((sum, i) => sum + i.quantity, 0)
-  const totalPrice = cartItems.reduce((sum, i) => sum + i.price * i.quantity, 0)
 
   const [trackingOpen, setTrackingOpen] = useState(false)
   const [trackingPhone, setTrackingPhone] = useState('')
@@ -72,6 +65,18 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
       localStorage.setItem('saraya-table-number', tableParam)
       localStorage.setItem('saraya-table-code', codeParam.toUpperCase())
       window.history.replaceState({}, '', '/')
+    }
+
+    const activeOrderId = localStorage.getItem('saraya-active-order-id')
+    if (activeOrderId) {
+      fetch(`/api/orders/${activeOrderId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(order => {
+          if (order && ['DELIVERED', 'CANCELLED'].includes(order.status)) {
+            localStorage.removeItem('saraya-active-order-id')
+          }
+        })
+        .catch(() => {})
     }
   }, [])
 
@@ -92,7 +97,6 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
     fetchMeals()
   }, [])
 
-  // جلب حالة استلام الطلبات من الإعدادات
   useEffect(() => {
     fetch('/api/settings')
       .then((res) => (res.ok ? res.json() : null))
@@ -134,6 +138,7 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
     return result
   }, [meals, activeCategory, searchQuery])
 
+  // ── Handlers ──
   const handleViewDetail = (meal: Meal) => {
     setSelectedMeal(meal)
     setOrderDetailOpen(true)
@@ -144,19 +149,15 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
     setTimeout(() => setSelectedMeal(null), 300)
   }
 
-  const handleOrderPromotion = (promo: Promotion) => {
-    addItem({
-      mealId: promo.mealId || promo.id,
-      title: promo.title,
-      titleAr: promo.titleAr,
-      price: promo.price,
-      quantity: 1,
-      imageUrl: promo.bannerImageUrl,
-      addOns: [],
-      category: 'عروض',
-      preparationArea: 'KITCHEN',
-    })
-    toast.success(`تم إضافة "${promo.titleAr || promo.title}" للسلة`)
+  // فتح OrderDetail للعرض
+  const handleViewPromoDetail = (promo: Promotion) => {
+    setSelectedPromotion(promo)
+    setPromotionDetailOpen(true)
+  }
+
+  const handleClosePromoDetail = () => {
+    setPromotionDetailOpen(false)
+    setTimeout(() => setSelectedPromotion(null), 300)
   }
 
   const handleOpenTracking = () => {
@@ -199,7 +200,6 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* شريط حالة استلام الطلبات */}
       {takingOrders === false && (
         <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 text-center" dir="rtl">
           <span className="text-sm text-red-400 font-medium">
@@ -207,7 +207,47 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
           </span>
         </div>
       )}
+
       <MenuHeader onAdminClick={onAdminClick} onTrackClick={handleOpenTracking} />
+
+      {/* زرار السلة العائم — ظاهر على طول */}
+      <motion.button
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 20, delay: 0.3 }}
+          onClick={() => setCartOpen(true)}
+          className="fixed right-3 bottom-20 z-50 flex items-center justify-center rounded-full shadow-xl transition-all hover:scale-110 active:scale-95 md:right-5 md:bottom-24"
+          style={{
+            width: totalItems > 0 ? '60px' : '50px',
+            height: totalItems > 0 ? '60px' : '50px',
+            backgroundColor: totalItems > 0 ? '#D4AF37' : 'rgba(15,20,25,0.9)',
+            color: totalItems > 0 ? '#0F1419' : '#D4AF37',
+            boxShadow: totalItems > 0 ? '0 4px 20px rgba(212,175,55,0.4)' : '0 4px 15px rgba(0,0,0,0.3)',
+            border: '2px solid',
+            borderColor: totalItems > 0 ? 'rgba(212,175,55,0.6)' : 'rgba(212,175,55,0.2)',
+          }}
+        >
+          <motion.div
+            key={totalItems}
+            initial={{ scale: 1.4 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+          >
+            <ShoppingBasket className="h-6 w-6" />
+          </motion.div>
+          {totalItems > 0 && (
+            <motion.span
+              key={`badge-${totalItems}`}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+              className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white ring-2 ring-background"
+            >
+              {totalItems}
+            </motion.span>
+          )}
+        </motion.button>
+
       <HeroCarousel />
 
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
@@ -240,72 +280,59 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
               <p className="text-sm mt-1">ترقب عروضنا القادمة!</p>
             </div>
           ) : (
+            // ✅ استخدام PromotionCard بنفس شكل MealCardSimple
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {promotions.map((promo) => (
-                <div key={promo.id} className="group rounded-xl border bg-card overflow-hidden shadow-sm hover:shadow-md transition-all">
-                  {promo.bannerImageUrl && (
-                    <div className="relative h-32 overflow-hidden">
-                      <img src={promo.bannerImageUrl} alt={promo.titleAr || promo.title} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                      <div className="absolute top-2 right-2 rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">عرض خاص</div>
-                    </div>
-                  )}
-                  <div className="p-3 space-y-2">
-                    <h3 className="font-semibold text-sm truncate">{promo.titleAr || promo.title}</h3>
-                    {(promo.descriptionAr || promo.description) && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">{promo.descriptionAr || promo.description}</p>
-                    )}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="font-bold text-primary">
-                        {promo.price > 0 ? `${promo.price.toFixed(2)} ج.م` : 'مجاني'}
-                      </span>
-                      <button onClick={() => handleOrderPromotion(promo)} className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors">
-                        <ShoppingCart className="h-3.5 w-3.5" />
-                        اطلب الآن
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <PromotionCard
+                  key={promo.id}
+                  promo={promo}
+                  onViewDetail={handleViewPromoDetail}
+                />
               ))}
             </div>
           )
         ) : (
-          <MenuGrid meals={filteredMeals} loading={loading} activeCategory={activeCategory} onViewDetail={handleViewDetail} />
+          <MenuGrid
+            meals={filteredMeals}
+            loading={loading}
+            activeCategory={activeCategory}
+            onViewDetail={handleViewDetail}
+          />
         )}
       </main>
 
       <footer className="mt-auto border-t border-[#D4AF37]/10 bg-muted/20 py-6">
         <div className="mx-auto max-w-7xl px-4 text-center">
-          <p className="text-sm text-muted-foreground">© 2024 توب  | Top - جميع الحقوق محفوظة</p>
+          <p className="text-sm text-muted-foreground">© 2024 توب | Top - جميع الحقوق محفوظة</p>
           <p className="mt-1 text-xs text-muted-foreground/60">Fine Arabic Dining Experience</p>
         </div>
       </footer>
 
-      {/* زرار السلة العائم تحت */}
-      <AnimatePresence>
-        {totalItems > 0 && !cartOpen && (
-          <motion.button
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            onClick={() => setCartOpen(true)}
-            className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border-none bg-[#D4AF37] px-6 py-3.5 text-[#0F1419] shadow-xl shadow-[#D4AF37]/30 transition-all hover:bg-[#c9a22e] hover:shadow-2xl active:scale-95"
-          >
-            <ShoppingBag className="h-6 w-6" />
-            <span className="font-bold">السلة</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{totalItems}</span>
-            <span className="text-sm font-semibold">{totalPrice.toFixed(2)} ج.م</span>
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {/* OrderDetail للوجبة العادية */}
+      <OrderDetail
+        key={selectedMeal?.id || 'meal-none'}
+        meal={selectedMeal}
+        open={orderDetailOpen}
+        onClose={handleCloseDetail}
+      />
 
-      <OrderDetail key={selectedMeal?.id || 'none'} meal={selectedMeal} open={orderDetailOpen} onClose={handleCloseDetail} />
+      {/* ✅ OrderDetail للعرض — بيبعت promotion prop */}
+      <OrderDetail
+        key={selectedPromotion?.id || 'promo-none'}
+        meal={null}
+        open={promotionDetailOpen}
+        onClose={handleClosePromoDetail}
+        promotion={selectedPromotion}
+      />
 
-      <Dialog open={trackingOpen} onOpenChange={(o) => { setTrackingOpen(o); if (!o) { setTrackedOrderId(null); setTrackingPhone('') } }}>
+      {/* Tracking Dialog */}
+      <Dialog open={trackingOpen} onOpenChange={(o) => { setTrackingOpen(o); if (!o) setTrackedOrderId(null) }}>
         <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md bg-background border-[#D4AF37]/20 rounded-2xl" dir="rtl">
           <DialogHeader>
             <DialogTitle className="text-[#D4AF37] flex items-center gap-2">تتبع حالة طلبك</DialogTitle>
-            <DialogDescription className="text-gray-400">أدخل رقم الهاتف الذي استخدمته عند إرسال الطلب لمتابعة حالته.</DialogDescription>
+            <DialogDescription className="text-gray-400">
+              أدخل رقم الهاتف الذي استخدمته عند إرسال الطلب لمتابعة حالته.
+            </DialogDescription>
           </DialogHeader>
           {!trackedOrderId ? (
             <div className="space-y-4 py-4">
@@ -313,20 +340,31 @@ export function ClientMenu({ onAdminClick }: ClientMenuProps) {
                 <Label className="text-sm">رقم الهاتف</Label>
                 <div className="relative">
                   <Phone className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#D4AF37]" />
-                  <PhoneInput type="tel" value={trackingPhone} onChange={(e) => setTrackingPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="01xxxxxxxxx" className="bg-muted border-border/10 pr-10 text-center text-lg tracking-widest" />
+                  <Input
+                    type="tel"
+                    value={trackingPhone}
+                    onChange={(e) => setTrackingPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                    placeholder="01xxxxxxxxx"
+                    className="bg-muted border-border/10 pr-10 text-center text-lg tracking-widest"
+                  />
                 </div>
               </div>
-              <Button onClick={handleTrackOrder} className="w-full bg-[#D4AF37] text-black font-bold hover:bg-[#c9a430]">ابحث عن طلبي</Button>
+              <Button onClick={handleTrackOrder} className="w-full bg-[#D4AF37] text-black font-bold hover:bg-[#c9a430]">
+                ابحث عن طلبي
+              </Button>
             </div>
           ) : (
             <div className="max-h-[70vh] overflow-y-auto">
-              <OrderTracking orderId={trackedOrderId} onBackToMenu={() => { setTrackedOrderId(null); setTrackingOpen(false) }} />
+              <OrderTracking
+                orderId={trackedOrderId}
+                onBackToMenu={() => { setTrackedOrderId(null); setTrackingOpen(false) }}
+              />
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Cart Summary Dialog */}
+      {/* Cart Dialog */}
       <Dialog open={cartOpen} onOpenChange={setCartOpen}>
         <DialogContent className="w-[calc(100%-2rem)] sm:max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl" dir="rtl">
           <VisuallyHidden asChild>

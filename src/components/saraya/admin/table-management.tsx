@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import type { Order } from '@/lib/saraya/types'
+import { transformOrder } from '@/lib/saraya/helpers'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from '@/components/ui/dialog'
@@ -56,7 +57,7 @@ export function TableManagement() {
     try {
       const res = await fetch('/api/orders')
       if (res.ok) {
-        const data = await res.json()
+        const data = (await res.json()).map(transformOrder)
         // الطاولة تعتبر مشغولة لو ليها أوردر مش (تم التسليم أو ملغي)
         setActiveOrders(data.filter((o: any) => 
           o.type === 'DINE_IN' && 
@@ -318,7 +319,11 @@ export function TableManagement() {
               <QrCode className="h-5 w-5" />
               QR Code - طاولة {selectedTable?.number}
             </DialogTitle>
-            <DialogDescription>اطبع ده وحطه على الطاولة - الزبون يمسحه ويدخل الكود</DialogDescription>
+            <DialogDescription>
+              {selectedTable 
+                ? `اطبع هذا الكود وضعه على طاولة رقم ${selectedTable.number} ليتمكن الزبائن من الطلب مباشرة.`
+                : 'تحميل بيانات الطاولة...'}
+            </DialogDescription>
           </DialogHeader>
           {selectedTable && (
             <div className="flex flex-col items-center gap-4 py-4">

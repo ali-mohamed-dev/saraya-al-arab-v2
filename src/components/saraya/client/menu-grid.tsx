@@ -5,7 +5,6 @@ import { UtensilsCrossed, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { MealCardSimple } from '@/components/saraya/client/meal-card-clickable'
 import { type Meal } from '@/lib/saraya/types'
-import { CATEGORY_FILTERS } from './menu-categories'
 
 interface MenuGridProps {
   meals: Meal[]
@@ -45,7 +44,7 @@ export function MenuGrid({ meals, loading, activeCategory, onViewDetail }: MenuG
           className="mb-6 text-center"
         >
           <h2 className="text-2xl font-bold text-foreground">
-            {activeCategory === 'all' ? 'القائمة الكاملة' : CATEGORY_FILTERS.find((c) => c.value === activeCategory)?.label}
+            {activeCategory === 'all' ? 'القائمة الكاملة' : activeCategory}
           </h2>
           <Badge variant="outline" className="mt-2 border-[#D4AF37]/30 text-[#D4AF37]">
             {meals.length} طبق
