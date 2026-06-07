@@ -31,48 +31,48 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
 
       <main className="mx-auto max-w-7xl p-4 md:p-6">
         <Tabs defaultValue="menu" dir="rtl" className="w-full">
-          <TabsList className="mb-6 flex w-full flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
-            <TabsTrigger value="menu" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+          <TabsList className="mb-6 flex w-full gap-1 bg-muted/50 p-1 rounded-xl overflow-x-auto [&::-webkit-scrollbar]:hidden justify-start">
+            <TabsTrigger value="menu" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <UtensilsCrossed className="h-4 w-4" />
               <span className="hidden sm:inline">إدارة المنيو</span>
               <span className="sm:hidden">المنيو</span>
             </TabsTrigger>
-            <TabsTrigger value="add" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="add" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Plus className="h-4 w-4" />
               <span className="hidden sm:inline">إضافة طبق</span>
               <span className="sm:hidden">إضافة</span>
             </TabsTrigger>
-            <TabsTrigger value="promos" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="promos" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Megaphone className="h-4 w-4" />
               <span className="hidden sm:inline">إدارة العروض</span>
               <span className="sm:hidden">العروض</span>
             </TabsTrigger>
-            <TabsTrigger value="orders" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="orders" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <ClipboardList className="h-4 w-4" />
               <span className="hidden sm:inline">إدارة الطلبات</span>
               <span className="sm:hidden">الطلبات</span>
             </TabsTrigger>
-            <TabsTrigger value="shift" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="shift" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <DollarSign className="h-4 w-4" />
               <span className="hidden sm:inline">الشيفت</span>
               <span className="sm:hidden">الشيفت</span>
             </TabsTrigger>
-            <TabsTrigger value="tables" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="tables" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Armchair className="h-4 w-4" />
               <span className="hidden sm:inline">الطاولات</span>
               <span className="sm:hidden">الطاولات</span>
             </TabsTrigger>
-            <TabsTrigger value="staff" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="staff" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Users className="h-4 w-4" />
               <span className="hidden sm:inline">الموظفين</span>
               <span className="sm:hidden">الموظفين</span>
             </TabsTrigger>
-            <TabsTrigger value="expenses" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="expenses" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <TrendingDown className="h-4 w-4" />
               <span className="hidden sm:inline">المصروفات</span>
               <span className="sm:hidden">المصروفات</span>
             </TabsTrigger>
-            <TabsTrigger value="categories" className="flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm">
+            <TabsTrigger value="categories" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Tag className="h-4 w-4" />
               <span className="hidden sm:inline">التصنيفات</span>
               <span className="sm:hidden">التصنيفات</span>

@@ -182,14 +182,7 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                 <Eye className="h-3 w-3" /> فاتورة
               </Button>
 
-              {/* Print */}
-              <Button
-                size="sm" variant="outline"
-                onClick={() => onPrint(order)}
-                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold"
-              >
-                <Download className="h-3 w-3" /> طباعة
-              </Button>
+              
 
               {/* Status progression buttons */}
               {order.status === 'PENDING' && (

@@ -170,9 +170,6 @@ export function TableManagement() {
             <Armchair className="h-5 w-5" />
             إدارة الطاولات
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            كل طاولة ليها كود سري سري - الزبون لازم يمسح QR أو يدخل الكود عشان يطلب
-          </p>
         </div>
         <Button onClick={() => setShowAddDialog(true)}
           className="gap-2 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold">

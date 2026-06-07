@@ -64,7 +64,7 @@ export function MenuGrid({ meals, loading, activeCategory, onViewDetail }: MenuG
               exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.3, delay: index * 0.05 }}
             >
-              <MealCardSimple meal={meal} onViewDetail={onViewDetail} />
+              <MealCardSimple meal={meal} onViewDetail={onViewDetail} priority={index < 6} />
             </motion.div>
           ))}
         </AnimatePresence>

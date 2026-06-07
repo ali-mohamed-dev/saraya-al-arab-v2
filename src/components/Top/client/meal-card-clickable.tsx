@@ -9,9 +9,10 @@ import { type Meal } from '@/lib/saraya/types'
 interface MealCardProps {
   meal: Meal
   onViewDetail: (meal: Meal) => void
+  priority?: boolean
 }
 
-export function MealCardSimple({ meal, onViewDetail }: MealCardProps) {
+export function MealCardSimple({ meal, onViewDetail, priority }: MealCardProps) {
   return (
     <motion.div
       whileHover={{ scale: 1.02 }}
@@ -22,7 +23,7 @@ export function MealCardSimple({ meal, onViewDetail }: MealCardProps) {
       <Card className="group overflow-hidden border border-border/50 bg-card transition-all duration-300 hover:border-[#D4AF37]/40 hover:shadow-[0_0_20px_rgba(202,170,74,0.15)]">
         <div className="relative aspect-[4/3] overflow-hidden">
           {meal.imageUrl ? (
-            <Image src={meal.imageUrl} alt={meal.titleAr} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 768px) 50vw, 25vw" />
+            <Image src={meal.imageUrl} alt={meal.titleAr} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 768px) 50vw, 25vw" loading={priority ? 'eager' : 'lazy'} />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">
               <UtensilsCrossed className="size-12 text-muted-foreground/40" />
