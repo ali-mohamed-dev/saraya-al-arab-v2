@@ -5,9 +5,10 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET() {
   try {
     const meals = await db.meal.findMany({
+      select: { id: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, prepTime: true, category: true, categoryAr: true, preparationArea: true, imageUrl: true, isActive: true },
       orderBy: { createdAt: 'desc' },
     })
-    return NextResponse.json(meals)
+    return NextResponse.json(meals, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
   } catch (error) {
     console.error('Error fetching meals:', error)
     return NextResponse.json({ error: 'Failed to fetch meals' }, { status: 500 })

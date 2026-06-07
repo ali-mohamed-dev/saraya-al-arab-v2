@@ -61,6 +61,7 @@ export interface Order {
   serviceCharge: number
   total: number
   kitchenAccess: boolean
+  baristaAccess: boolean
   kitchenStatus: KitchenBaristaStatus
   baristaStatus: KitchenBaristaStatus
   notes?: string

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { checkIpRateLimit, checkPhoneRateLimit, checkMinOrderValue, getMinOrderValue } from '@/lib/saraya/rate-limit'
 
 // GET /api/orders - List all orders with items
-// Query params: ?status=PENDING, ?type=DINE_IN
+// Query params: ?status=PENDING, ?type=DINE_IN, ?page=1&limit=50 (اختياري)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -12,6 +12,8 @@ export async function GET(request: NextRequest) {
     const kitchenAccess = searchParams.get('kitchenAccess')
     const shiftId = searchParams.get('shiftId')
     const customerPhone = searchParams.get('customerPhone')
+    const page = searchParams.get('page')
+    const limit = searchParams.get('limit')
 
     const where: any = {}
     if (status) where.status = status
@@ -20,9 +22,35 @@ export async function GET(request: NextRequest) {
     if (kitchenAccess !== null) where.kitchenAccess = kitchenAccess === 'true'
     if (customerPhone) where.customerPhone = customerPhone
 
+    // Pagination: إذا لم يتم تحديد page/limit نرجع كل النتائج (للتوافق مع القديم)
+    if (page && limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1)
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50))
+      const skip = (pageNum - 1) * limitNum
+
+      const [orders, total] = await Promise.all([
+        db.order.findMany({
+          where,
+          include: { items: { select: { id: true, mealId: true, mealTitle: true, mealTitleAr: true, quantity: true, price: true, preparationArea: true, imageUrl: true, addOns: true, category: true, addedQuantity: true, createdAt: true, updatedAt: true } } },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limitNum,
+        }),
+        db.order.count({ where }),
+      ])
+
+      return NextResponse.json({
+        data: orders,
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      })
+    }
+
+    // بدون pagination (سلوك قديم)
     const orders = await db.order.findMany({
       where,
-      include: { items: true },
+      include: { items: { select: { id: true, mealId: true, mealTitle: true, mealTitleAr: true, quantity: true, price: true, preparationArea: true, imageUrl: true, addOns: true, category: true, addedQuantity: true, createdAt: true, updatedAt: true } } },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -49,11 +77,11 @@ export async function POST(request: NextRequest) {
       items,
       subtotal,
       serviceCharge,
-      deliveryFee,
       total,
       shiftId,
     } = body
 
+    // ─── Validation ──────────────────────────────────────────
     if (!type || !items || items.length === 0) {
       return NextResponse.json(
         { error: 'Order type and items are required' },
@@ -61,6 +89,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 0a) Check store settings (taking orders toggle)
     const storeSettings = await db.storeSettings.findUnique({ where: { id: 'default' } })
     if (storeSettings && !storeSettings.takingOrders) {
       return NextResponse.json(
@@ -69,6 +98,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 0b) Check if there's an open shift
     const openShift = await db.shift.findFirst({
       where: { status: 'OPEN' },
       orderBy: { createdAt: 'desc' },
@@ -90,16 +120,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 1b) Verify all meals or promotions exist
+    // 1b) Verify all meals or promotions exist and are active
     const itemIds = Array.from(new Set(items.map((i: any) => i.mealId).filter(Boolean))) as string[]
     
     const [existingMeals, existingPromos] = await Promise.all([
       db.meal.findMany({
-        where: { id: { in: itemIds } },
+        where: { id: { in: itemIds }, isActive: true },
         select: { id: true }
       }),
       db.promotion.findMany({
-        where: { id: { in: itemIds } },
+        where: { id: { in: itemIds }, isActive: true },
         select: { id: true }
       })
     ])
@@ -109,7 +139,7 @@ export async function POST(request: NextRequest) {
     if (foundIds.size !== itemIds.length) {
       return NextResponse.json(
         { 
-          error: 'بعض الأطباق أو العروض في سلتك لم تعد موجودة، يرجى تحديث الصفحة' 
+          error: 'بعض الأطباق أو العروض في سلتك لم تعد موجودة أو تم إيقافها، يرجى تحديث الصفحة' 
         },
         { status: 400 }
       )
@@ -209,10 +239,27 @@ export async function POST(request: NextRequest) {
           tableNumber: String(tableNumber),
           status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'] },
         },
-        include: { items: true },
+        include: { items: { select: { id: true, mealId: true, mealTitle: true, mealTitleAr: true, quantity: true, price: true, preparationArea: true, imageUrl: true, addOns: true, category: true, addedQuantity: true, createdAt: true, updatedAt: true } } },
       })
 
       if (existingOrder) {
+        // Normalize addOns JSON string to ensure consistent comparison
+        function normalizeAddOns(addOns: string): string {
+          try {
+            const parsed = JSON.parse(addOns)
+            const sorted = JSON.stringify(parsed, (_, val) =>
+              Array.isArray(val)
+                ? val.map((v: unknown) => typeof v === 'object' && v !== null
+                    ? Object.keys(v).sort().reduce((acc: Record<string, unknown>, k: string) => { acc[k] = (v as Record<string, unknown>)[k]; return acc }, {})
+                    : v)
+                : val
+            )
+            return sorted
+          } catch {
+            return addOns
+          }
+        }
+
         type IncomingItem = {
           mealId: string
           mealTitle: string
@@ -234,8 +281,6 @@ export async function POST(request: NextRequest) {
         }>
 
         const itemUpdates: Array<Promise<unknown>> = []
-        const promoIds = new Set(existingPromos.map(p => p.id))
-
         const createData: Array<{
           orderId: string
           mealId: string
@@ -247,8 +292,8 @@ export async function POST(request: NextRequest) {
           preparationArea: string
           category: string
           imageUrl: string
-          isPromotion: boolean
           lastAddedQuantity: number
+          addedQuantity: number
         }> = []
 
         const normalizedIncomingItems: IncomingItem[] = items.map((item: any) => ({
@@ -257,7 +302,7 @@ export async function POST(request: NextRequest) {
           mealTitleAr: item.mealTitleAr || '',
           price: parseFloat(String(item.price)) || 0,
           quantity: parseInt(String(item.quantity)) || 1,
-          addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+          addOns: normalizeAddOns(typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || [])),
           preparationArea: item.preparationArea || 'KITCHEN',
           category: (item.category || '').trim(),
           imageUrl: item.imageUrl || '',
@@ -276,14 +321,14 @@ export async function POST(request: NextRequest) {
           const existingItem = existingItems.find((ei) =>
             ei.mealId === item.mealId &&
             ei.category === item.category &&
-            ei.addOns === item.addOns
+            normalizeAddOns(ei.addOns) === item.addOns
           )
 
           if (existingItem) {
             itemUpdates.push(db.orderItem.update({
               where: { id: existingItem.id },
               data: {
-                quantity: { increment: item.quantity },
+                quantity: existingItem.quantity + item.quantity,
                 addedQuantity: item.quantity,
               },
             }))
@@ -299,7 +344,7 @@ export async function POST(request: NextRequest) {
               category: item.category,
               preparationArea: item.preparationArea,
               imageUrl: item.imageUrl,
-              isPromotion: promoIds.has(item.mealId),
+              lastAddedQuantity: 0,
               addedQuantity: item.quantity,
             })
           }
@@ -316,26 +361,25 @@ export async function POST(request: NextRequest) {
 
         const safeSubtotal = parseFloat(String(subtotal)) || 0
         const safeServiceCharge = parseFloat(String(serviceCharge)) || 0
-        const safeDeliveryFee = parseFloat(String(deliveryFee)) || 0
         const safeTotal = parseFloat(String(total)) || 0
 
         const updatedOrder = await db.order.update({
           where: { id: existingOrder.id },
           data: {
-            subtotal: { increment: safeSubtotal },
-            serviceCharge: { increment: safeServiceCharge },
-            deliveryFee: { increment: safeDeliveryFee },
-            total: { increment: safeSubtotal + safeServiceCharge + safeDeliveryFee },
+            subtotal: existingOrder.subtotal + safeSubtotal,
+            serviceCharge: existingOrder.serviceCharge + safeServiceCharge,
+            total: existingOrder.total + safeTotal,
             notes: notes ? (existingOrder.notes ? `${existingOrder.notes} | ${notes}` : notes) : existingOrder.notes,
             status: needsNewPreparation && (existingOrder.status === 'READY' || existingOrder.status === 'READY_TO_PAY')
               ? 'PREPARING'
               : existingOrder.status,
-            // FIX: preserve kitchenAccess=true if already granted; new items need kitchen to see them
-            kitchenAccess: existingOrder.kitchenAccess || (hasNewKitchenItems || hasNewBaristaItems),
+            // FIX: إعادة kitchenAccess لـ false لكي لا يرى المطبخ الإضافات قبل تأكيد الويتر
+            // إذا كان الطلب لا يزال PENDING (لم يؤكد من الأساس) نسمح بالوصول
+            kitchenAccess: existingOrder.status === 'PENDING',
             kitchenStatus: hasNewKitchenItems ? 'PENDING' : existingOrder.kitchenStatus,
             baristaStatus: hasNewBaristaItems ? 'PENDING' : existingOrder.baristaStatus,
           },
-          include: { items: true },
+          include: { items: { select: { id: true, mealId: true, mealTitle: true, mealTitleAr: true, quantity: true, price: true, preparationArea: true, imageUrl: true, addOns: true, category: true, addedQuantity: true, createdAt: true, updatedAt: true } } },
         })
 
         return NextResponse.json(updatedOrder, { status: 200 })
@@ -355,9 +399,6 @@ export async function POST(request: NextRequest) {
       })
       const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1001
 
-      // Determine which items are promotions
-      const promoIds = new Set(existingPromos.map(p => p.id))
-
       const orderData: any = {
         orderNumber,
         type,
@@ -369,13 +410,12 @@ export async function POST(request: NextRequest) {
         notes: notes || '',
         subtotal: parseFloat(subtotal) || 0,
         serviceCharge: parseFloat(serviceCharge) || 0,
-        deliveryFee: parseFloat(deliveryFee) || 0,
         total: parseFloat(total) || 0,
         status: 'PENDING',
         kitchenStatus: 'PENDING',
         baristaStatus: 'PENDING',
         kitchenAccess: false, // Staff must confirm before kitchen sees it
-        shiftId: openShift.id,
+        shiftId: shiftId || openShift.id,
         items: {
           create: items.map(
             (item: {
@@ -388,21 +428,17 @@ export async function POST(request: NextRequest) {
               category?: string
               preparationArea?: string
               imageUrl?: string
-            }) => {
-              const isPromo = promoIds.has(item.mealId)
-              return {
-                mealId: item.mealId,
-                mealTitle: item.mealTitle,
-                mealTitleAr: item.mealTitleAr || '',
-                price: parseFloat(String(item.price)),
-                quantity: parseInt(String(item.quantity)),
-                addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
-                category: item.category || '',
-                preparationArea: item.preparationArea || 'KITCHEN',
-                imageUrl: item.imageUrl || '',
-                isPromotion: isPromo,
-              }
-            }
+            }) => ({
+              mealId: item.mealId,
+              mealTitle: item.mealTitle,
+              mealTitleAr: item.mealTitleAr || '',
+              price: parseFloat(String(item.price)),
+              quantity: parseInt(String(item.quantity)),
+              addOns: typeof item.addOns === 'string' ? item.addOns : JSON.stringify(item.addOns || []),
+              category: item.category || '',
+              preparationArea: item.preparationArea || 'KITCHEN',
+              imageUrl: item.imageUrl || '',
+            })
           ),
         },
       }
@@ -410,7 +446,7 @@ export async function POST(request: NextRequest) {
       try {
         order = await db.order.create({
           data: orderData,
-          include: { items: true },
+          include: { items: { select: { id: true, mealId: true, mealTitle: true, mealTitleAr: true, quantity: true, price: true, preparationArea: true, imageUrl: true, addOns: true, category: true, addedQuantity: true, createdAt: true, updatedAt: true } } },
         })
         break // success
       } catch (createErr: any) {

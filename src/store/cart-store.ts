@@ -107,9 +107,10 @@ export const useCartStore = create<CartStore>()(
     {
       name: 'saraya-cart',
       version: 1,
+      partialize: (state) => ({ items: state.items }),
+      merge: (persisted, current) => ({ ...current, items: (persisted as any)?.items ?? current.items }),
       migrate: (persistedState: any, version: number) => {
         if (version === 0) {
-          // Old cart without timestamps - clear it to avoid stale data
           return { items: [] }
         }
         return persistedState

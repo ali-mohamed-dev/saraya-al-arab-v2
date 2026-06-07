@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const shiftId = searchParams.get('shiftId')
 
-    const where: any = {}
+    const where: Record<string, string> = {}
     if (shiftId) where.shiftId = shiftId
 
     const expenses = await db.expense.findMany({
@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json(expenses)
+    // Map DB fields to frontend-compatible field names
+    const mapped = expenses.map((e) => ({
+      ...e,
+      title: e.description,
+      addedBy: e.createdBy,
+    }))
+
+    return NextResponse.json(mapped)
   } catch (error) {
     console.error('Error fetching expenses:', error)
     return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 })
@@ -33,33 +40,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Description and amount are required' }, { status: 400 })
     }
 
-    const parsedAmount = parseFloat(String(amount))
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      return NextResponse.json({ error: 'المبلغ غير صحيح' }, { status: 400 })
-    }
-
-    // التحقق من أن الشيفت موجود ومفتوح
-    if (shiftId) {
-      const shift = await db.shift.findUnique({ where: { id: shiftId } })
-      if (!shift) {
-        return NextResponse.json({ error: 'الشيفت غير موجود' }, { status: 400 })
-      }
-      if (shift.status !== 'OPEN') {
-        return NextResponse.json({ error: 'لا يمكن إضافة مصروف لشيفت مغلق' }, { status: 400 })
-      }
-    }
-
     const expense = await db.expense.create({
       data: {
         description: resolvedDescription,
-        amount: parsedAmount,
+        amount: parseFloat(amount),
         category: category || 'عام',
         shiftId: shiftId || null,
         createdBy: resolvedCreatedBy,
       },
     })
 
-    return NextResponse.json(expense, { status: 201 })
+    return NextResponse.json({
+      ...expense,
+      title: expense.description,
+      addedBy: expense.createdBy,
+    }, { status: 201 })
   } catch (error) {
     console.error('Error creating expense:', error)
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 })

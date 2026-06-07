@@ -11,11 +11,9 @@ export async function GET(request: NextRequest) {
     const promotions = await db.promotion.findMany({
       where: activeOnly ? { isActive: true } : undefined,
       orderBy: { createdAt: 'desc' },
-      include: {
-        mealItems: { include: { meal: true } },
-      },
+      select: { id: true, bannerImageUrl: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, oldPrice: true, discount: true, isActive: true, buttonText: true, buttonTextAr: true, buttonLink: true, createdAt: true, mealItems: { select: { id: true, mealId: true, meal: { select: { id: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, prepTime: true, category: true, categoryAr: true, preparationArea: true, imageUrl: true, isActive: true } } } } },
     })
-    return NextResponse.json(promotions)
+    return NextResponse.json(promotions, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
   } catch (error) {
     console.error('Error fetching promotions:', error)
     return NextResponse.json({ error: 'Failed to fetch promotions' }, { status: 500 })

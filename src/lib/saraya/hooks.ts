@@ -75,21 +75,54 @@ export function useOrderPolling(
 
 // ── useRelativeTimers ────────────────────────────────────────────────────
 
-export function useRelativeTimers(orders: { id: string; createdAt: string }[]) {
+export function useRelativeTimers(
+  orders: { id: string; createdAt: string }[],
+  seenAtMap?: Record<string, string>
+) {
   const [timers, setTimers] = useState<Record<string, string>>({})
+  const ordersKey = orders.map((o) => o.id).sort().join(',')
 
   useEffect(() => {
     const updateTimers = () => {
       const newTimers: Record<string, string> = {}
       orders.forEach((o) => {
-        newTimers[o.id] = getRelativeTime(o.createdAt)
+        const referenceTime = seenAtMap?.[o.id] || o.createdAt
+        newTimers[o.id] = getRelativeTime(referenceTime)
       })
       setTimers(newTimers)
     }
     updateTimers()
     const id = setInterval(updateTimers, 30000)
     return () => clearInterval(id)
-  }, [orders])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordersKey, seenAtMap])
 
   return timers
+}
+
+// ── useSeenAtTracker ────────────────────────────────────────────────────
+// يتتبع أول مرة يظهر فيها كل أوردر في القسم
+// لو الأوردر اختفى (مثلاً kitchenAccess=false) ورجع تاني، العداد يبدأ من الأول
+
+export function useSeenAtTracker(orders: { id: string }[]) {
+  const seenAtRef = useRef<Record<string, string>>({})
+
+  const currentIds = new Set(orders.map(o => o.id))
+
+  // حذف الإدخالات للأوردرات اللي اختفت من القائمة
+  // عشان لو الأوردر رجع تاني (بعد تأكيد الويتر) العداد يبدأ من وقت الرجوع مش من الأول
+  for (const id of Object.keys(seenAtRef.current)) {
+    if (!currentIds.has(id)) {
+      delete seenAtRef.current[id]
+    }
+  }
+
+  // تسجيل وقت أول ظهور لكل أوردر جديد
+  orders.forEach((o) => {
+    if (!seenAtRef.current[o.id]) {
+      seenAtRef.current[o.id] = new Date().toISOString()
+    }
+  })
+
+  return seenAtRef.current
 }

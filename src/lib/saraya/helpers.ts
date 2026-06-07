@@ -58,6 +58,7 @@ export function transformOrder(raw: Record<string, unknown>): Order {
     serviceCharge: Number(raw.serviceCharge ?? 0),
     total: Number(raw.total ?? 0),
     kitchenAccess: (raw.kitchenAccess as boolean) ?? false,
+    baristaAccess: (raw.baristaAccess as boolean) ?? false,
     kitchenStatus: (raw.kitchenStatus as string) as Order['kitchenStatus'] || 'PENDING',
     baristaStatus: (raw.baristaStatus as string) as Order['baristaStatus'] || 'PENDING',
     notes: (raw.notes as string) || undefined,
@@ -112,12 +113,27 @@ export function escapeHtml(str: string): string {
 
 let audioContextSingleton: AudioContext | null = null
 
+export function unlockAudio() {
+  try {
+    if (!audioContextSingleton) {
+      audioContextSingleton = new AudioContext()
+    }
+    if (audioContextSingleton.state === 'suspended') {
+      audioContextSingleton.resume()
+    }
+  } catch { /* ignore */ }
+}
+
 export function playNotificationSound() {
   try {
     if (!audioContextSingleton) {
       audioContextSingleton = new AudioContext()
     }
     const ctx = audioContextSingleton
+    if (ctx.state === 'suspended') {
+      ctx.resume()
+    }
+    if (ctx.state !== 'running') return
     const oscillator = ctx.createOscillator()
     const gainNode = ctx.createGain()
     oscillator.connect(gainNode)
@@ -128,6 +144,10 @@ export function playNotificationSound() {
     oscillator.start()
     gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3)
     oscillator.stop(ctx.currentTime + 0.3)
+    oscillator.onended = () => {
+      oscillator.disconnect()
+      gainNode.disconnect()
+    }
   } catch { /* ignore */ }
 }
 

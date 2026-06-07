@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { releasePhoneOrder } from '@/lib/saraya/rate-limit'
 
 // GET /api/orders/[id] - Get a single order with its items
 export async function GET(
@@ -164,6 +165,13 @@ export async function PUT(
     }
     // If no items changed, preserve existing subtotal/serviceCharge/total (don't overwrite)
 
+    // Release phone rate limit when order is delivered or cancelled
+    if (body.status === 'DELIVERED' || body.status === 'CANCELLED') {
+      if (existing.customerPhone) {
+        releasePhoneOrder(existing.customerPhone)
+      }
+    }
+
     const order = await db.order.update({
       where: { id },
       data: updateData,
@@ -199,6 +207,10 @@ export async function DELETE(
     // لا يمكن إلغاء طلب تم تسليمه
     if (existing.status === 'DELIVERED') {
       return NextResponse.json({ error: 'لا يمكن إلغاء طلب تم تسليمه بالفعل' }, { status: 400 })
+    }
+
+    if (existing.customerPhone) {
+      releasePhoneOrder(existing.customerPhone)
     }
 
     const order = await db.order.update({
