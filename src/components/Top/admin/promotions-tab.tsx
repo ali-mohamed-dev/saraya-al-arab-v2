@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Megaphone, Trash2, RefreshCw, Loader2, UtensilsCrossed, BadgePercent, Pencil, X } from 'lucide-react'
+import { Plus, Megaphone, Trash2, RefreshCw, Loader2, UtensilsCrossed, BadgePercent, Pencil, X, Search } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +39,95 @@ const emptyForm: PromoForm = {
   mealIds: [],
   buttonText: '',
   buttonTextAr: '',
+}
+
+function MealSelector({
+  meals, selectedIds, onAdd, onRemove, label,
+}: {
+  meals: Meal[]
+  selectedIds: string[]
+  onAdd: (id: string) => void
+  onRemove: (idx: number) => void
+  label?: string
+}) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('الكل')
+
+  const categories = useMemo(() => {
+    const cats = [...new Set(meals.map(m => m.category))]
+    return ['الكل', ...cats]
+  }, [meals])
+
+  const filteredMeals = useMemo(() => {
+    return meals.filter(m => {
+      const matchSearch = searchQuery === '' ||
+        m.titleAr?.includes(searchQuery) ||
+        m.title?.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchCategory = categoryFilter === 'الكل' || m.category === categoryFilter
+      return matchSearch && matchCategory
+    })
+  }, [meals, searchQuery, categoryFilter])
+
+  return (
+    <div className="space-y-2">
+      {label && <Label className="text-sm font-medium flex items-center gap-1.5">{label}</Label>}
+      <div className="relative mb-2">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="ابحث عن طبق..." className="bg-muted border-border/50 pr-9" dir="rtl" />
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {categories.map((cat) => (
+          <button key={cat} type="button" onClick={() => setCategoryFilter(cat)}
+            className={`rounded-lg border px-2.5 py-1 text-xs transition-all ${
+              categoryFilter === cat
+                ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]'
+                : 'border-border/50 bg-muted/50 text-muted-foreground hover:border-[#D4AF37]/30'
+            }`}>
+            {cat === 'الكل' ? `الكل (${meals.length})` : cat}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2 p-3 rounded-lg border border-border/50 bg-muted/10 max-h-48 overflow-y-auto">
+        {filteredMeals.length === 0 ? (
+          <span className="text-xs text-muted-foreground">لا توجد وجبات</span>
+        ) : (
+          filteredMeals.map((meal) => {
+            const isAlreadySelected = selectedIds.includes(meal.id)
+            return (
+              <button key={meal.id} type="button"
+                onClick={() => !isAlreadySelected && onAdd(meal.id)}
+                disabled={isAlreadySelected}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  isAlreadySelected
+                    ? 'border-[#D4AF37]/30 bg-[#D4AF37]/10 text-[#D4AF37]/50 cursor-not-allowed'
+                    : 'border-border/50 bg-muted text-muted-foreground hover:border-[#D4AF37]/50 hover:text-[#D4AF37]'
+                }`}>
+                {isAlreadySelected ? '✓ ' : '+ '}{meal.titleAr || meal.title}
+              </button>
+            )
+          })
+        )}
+      </div>
+      {selectedIds.length > 0 && (
+        <div className="p-3 rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5">
+          <Label className="text-xs font-bold text-[#D4AF37] mb-2 block">الوجبات المختارة حالياً:</Label>
+          <div className="flex flex-wrap gap-2">
+            {selectedIds.map((id, idx) => {
+              const meal = meals.find(m => m.id === id)
+              return (
+                <button key={`${id}-${idx}`} type="button" onClick={() => onRemove(idx)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#D4AF37] text-black hover:bg-red-500 hover:text-white transition-all group">
+                  <Trash2 className="h-3 w-3" />
+                  {meal?.titleAr || meal?.title}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function PromotionsTab() {
@@ -326,45 +415,13 @@ export function PromotionsTab() {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label className="text-sm font-medium flex items-center gap-1.5">
-          <UtensilsCrossed className="h-4 w-4 text-[#D4AF37]" />
-          الوجبات المتاحة (اضغط للإضافة للعرض)
-        </Label>
-        <div className="flex flex-wrap gap-2 p-3 rounded-lg border border-border/50 bg-muted/10">
-          {meals.length === 0 ? (
-            <span className="text-xs text-muted-foreground">لا توجد وجبات متاحة</span>
-          ) : (
-            meals.map((meal) => {
-              const isAlreadySelected = form.mealIds.includes(meal.id)
-              return (
-                <button key={meal.id} type="button" onClick={() => !isAlreadySelected && addMeal(meal.id)} disabled={isAlreadySelected}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isAlreadySelected ? 'border-[#D4AF37]/30 bg-[#D4AF37]/10 text-[#D4AF37]/50 cursor-not-allowed' : 'border-border/50 bg-muted text-muted-foreground hover:border-[#D4AF37]/50 hover:text-[#D4AF37]'}`}>
-                  {isAlreadySelected ? '✓ ' : '+ '}{meal.titleAr || meal.title}
-                </button>
-              )
-            })
-          )}
-        </div>
-      </div>
-
-      {form.mealIds.length > 0 && (
-        <div className="space-y-2">
-          <Label className="text-xs font-bold text-[#D4AF37]">الوجبات المختارة حالياً في هذا العرض:</Label>
-          <div className="flex flex-wrap gap-2 p-3 rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5">
-            {form.mealIds.map((id, index) => {
-              const meal = meals.find(m => m.id === id)
-              return (
-                <button key={`${id}-${index}`} type="button" onClick={() => removeMeal(index)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[#D4AF37] text-black hover:bg-red-500 hover:text-white transition-all group" title="اضغط للحذف">
-                  <Trash2 className="h-3 w-3" />
-                  {meal?.titleAr || meal?.title}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <MealSelector
+        meals={meals}
+        selectedIds={form.mealIds}
+        onAdd={addMeal}
+        onRemove={removeMeal}
+        label={<><UtensilsCrossed className="h-4 w-4 text-[#D4AF37]" /> الوجبات المتاحة (اضغط للإضافة للعرض)</>}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
