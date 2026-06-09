@@ -242,7 +242,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center" dir="rtl">
         <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-8 text-center">
           <p className="text-lg font-bold text-blue-400">جاري التحقق من حالة الشيفت...</p>
         </div>
@@ -252,7 +252,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftError) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-8" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center p-8" dir="rtl">
         <Card className="border-amber-500/20 bg-amber-500/5 p-8 text-center max-w-md">
           <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-amber-600 mb-2">خطأ في الاتصال</h2>
@@ -268,7 +268,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftOpen === false) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-8" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center p-8" dir="rtl">
         <Card className="border-red-500/20 bg-red-500/5 p-8 text-center max-w-md">
           <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-red-600 mb-2">قسم الباريستا مغلق</h2>
@@ -281,7 +281,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div
-      className={`min-h-screen bg-background transition-colors duration-300 ${flashActive ? 'bg-blue-500/5' : ''}`}
+      className={`min-h-dvh bg-background transition-colors duration-300 ${flashActive ? 'bg-blue-500/5' : ''}`}
       dir="rtl"
     >
       <BaristaHeader
@@ -318,7 +318,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence>
             {orders.map((order) => (
               <BaristaOrderCard
                 key={order.id}
@@ -346,3 +346,4 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
     </div>
   )
 }
+

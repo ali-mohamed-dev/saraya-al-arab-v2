@@ -200,3 +200,209 @@ const ORDER_STATUS_AR: Record<string, string> = {
 }
 
 export { ORDER_TYPE_AR, ORDER_STATUS_AR }
+
+// ─── Monthly Report Excel ────────────────────────────────
+
+export async function generateMonthlyReportExcel(opts: {
+  fromDate: string
+  toDate: string
+  revenues: { shiftId: string; startedAt: Date; totalRevenue: number }[]
+  expenses: ExpenseRow[]
+  categoryTotals: { category: string; total: number }[]
+  totalRevenue: number
+  totalExpenses: number
+  netRevenue: number
+}): Promise<Buffer> {
+  const { fromDate, toDate, revenues, expenses, categoryTotals, totalRevenue, totalExpenses, netRevenue } = opts
+
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'Top'
+  wb.created = new Date()
+
+  const ws = wb.addWorksheet('التقرير الشهري', {
+    views: [{ rightToLeft: true }],
+    properties: { tabColor: { argb: GOLD } },
+  })
+
+  ws.columns = [
+    { width: 5 },   // A - #
+    { width: 22 },  // B - اسم المصروف
+    { width: 14 },  // C - الفئة
+    { width: 14 },  // D - المبلغ
+    { width: 4 },   // E - فاصل
+    { width: 22 },  // F - البيان
+    { width: 16 },  // G - القيمة
+  ]
+
+  // Title
+  ws.mergeCells('A1:G1')
+  const titleCell = ws.getCell('A1')
+  titleCell.value = `التقرير الشهري — من ${fromDate} إلى ${toDate}`
+  titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: WHITE } }
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK_BG } }
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+  ws.getRow(1).height = 40
+
+  // Gold separator
+  ws.mergeCells('A2:G2')
+  ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GOLD } }
+  ws.getRow(2).height = 4
+
+  // Category Totals section (A-D)
+  const catHeaderRow = 3
+  ws.mergeCells(`A${catHeaderRow}:D${catHeaderRow}`)
+  const catTitleCell = ws.getCell(`A${catHeaderRow}`)
+  catTitleCell.value = 'ملخص المصروفات حسب الفئة'
+  catTitleCell.font = { name: 'Arial', size: 12, bold: true, color: { argb: WHITE } }
+  catTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+  catTitleCell.alignment = { horizontal: 'center', vertical: 'middle' }
+  ws.getRow(catHeaderRow).height = 28
+
+  let catRow = catHeaderRow + 1
+  for (const ct of categoryTotals) {
+    const c = ws.getCell(`A${catRow}`)
+    c.value = ct.category
+    c.font = { name: 'Arial', size: 10, bold: true }
+    c.alignment = { horizontal: 'right', vertical: 'middle' }
+    c.border = thinBorder()
+
+    const valCell = ws.getCell(`D${catRow}`)
+    valCell.value = ct.total
+    valCell.numFmt = '#,##0.00" ج.م"'
+    valCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'B71C1C' } }
+    valCell.alignment = { horizontal: 'center', vertical: 'middle' }
+    valCell.border = thinBorder()
+    ws.getRow(catRow).height = 22
+    catRow++
+  }
+
+  // Total expenses in category section
+  const catTotalRow = catRow
+  ws.mergeCells(`A${catTotalRow}:C${catTotalRow}`)
+  const catTotalLabel = ws.getCell(`A${catTotalRow}`)
+  catTotalLabel.value = 'إجمالي المصروفات'
+  catTotalLabel.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } }
+  catTotalLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK_BG } }
+  catTotalLabel.alignment = { horizontal: 'center', vertical: 'middle' }
+  catTotalLabel.border = thinBorder()
+
+  const catTotalVal = ws.getCell(`D${catTotalRow}`)
+  catTotalVal.value = totalExpenses
+  catTotalVal.numFmt = '#,##0.00" ج.م"'
+  catTotalVal.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } }
+  catTotalVal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK_BG } }
+  catTotalVal.alignment = { horizontal: 'center', vertical: 'middle' }
+  catTotalVal.border = thinBorder()
+  ws.getRow(catTotalRow).height = 26
+
+  // Spacing row
+  const spacerRow = catTotalRow + 1
+  ws.getRow(spacerRow).height = 8
+
+  // ─── All Expenses Detail ──────────────────────
+  const detHeaderRow = spacerRow + 1
+  ;['#', 'اسم المصروف', 'الفئة', 'المبلغ'].forEach((h, i) => {
+    const col = ['A', 'B', 'C', 'D'][i]
+    const c = ws.getCell(`${col}${detHeaderRow}`)
+    c.value = h
+    c.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+    c.alignment = { horizontal: 'center', vertical: 'middle' }
+    c.border = thinBorder()
+  })
+
+  // Revenue summary header (F-G)
+  ;['البيان', 'القيمة'].forEach((h, i) => {
+    const col = ['F', 'G'][i]
+    const c = ws.getCell(`${col}${detHeaderRow}`)
+    c.value = h
+    c.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: HEADER_BG } }
+    c.alignment = { horizontal: 'center', vertical: 'middle' }
+    c.border = thinBorder()
+  })
+  ws.getRow(detHeaderRow).height = 28
+
+  // Expense rows
+  let expRow = detHeaderRow + 1
+  for (let i = 0; i < expenses.length; i++) {
+    const e = expenses[i]
+    const bg = i % 2 === 0 ? RED_LIGHT : WHITE
+    const vals: (string | number)[] = [i + 1, e.title, e.category, parseFloat(e.amount.toFixed(2))]
+    ;['A', 'B', 'C', 'D'].forEach((col, ci) => {
+      const c = ws.getCell(`${col}${expRow}`)
+      c.value = vals[ci]
+      if (col === 'D') {
+        c.numFmt = '#,##0.00" ج.م"'
+        c.font = { name: 'Arial', size: 10, bold: true }
+      } else {
+        c.font = { name: 'Arial', size: 10 }
+      }
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+      c.alignment = { horizontal: 'center', vertical: 'middle' }
+      c.border = thinBorder()
+    })
+    ws.getRow(expRow).height = 22
+    expRow++
+  }
+
+  // Expense total row
+  ;['A', 'B', 'C', 'D'].forEach((col) => {
+    const c = ws.getCell(`${col}${expRow}`)
+    c.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } }
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK_BG } }
+    c.alignment = { horizontal: 'center', vertical: 'middle' }
+    c.border = thinBorder()
+  })
+  ws.getCell(`A${expRow}`).value = ''
+  ws.getCell(`C${expRow}`).value = 'الإجمالي'
+  const detailTotalCell = ws.getCell(`D${expRow}`)
+  detailTotalCell.value = totalExpenses
+  detailTotalCell.numFmt = '#,##0.00" ج.م"'
+  ws.getRow(expRow).height = 26
+
+  // ─── Revenue Summary (F-G) ─────────────────────
+  const revStartRow = detHeaderRow + 1
+  const summaryData = [
+    { label: 'إجمالي الإيرادات', value: totalRevenue,  bg: 'FFF8E1' },
+    { label: 'إجمالي المصروفات', value: totalExpenses, bg: RED_LIGHT },
+    { label: 'صافي الإيرادات',   value: netRevenue,    bg: GREEN_MED },
+  ]
+  summaryData.forEach(({ label, value, bg }, i) => {
+    const r = revStartRow + i
+    const fCell = ws.getCell(`F${r}`)
+    fCell.value = label
+    fCell.font = { name: 'Arial', size: 11, bold: true }
+    fCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+    fCell.alignment = { horizontal: 'right', vertical: 'middle' }
+    fCell.border = thinBorder()
+
+    const gCell = ws.getCell(`G${r}`)
+    gCell.value = value
+    gCell.numFmt = '#,##0.00" ج.م"'
+    gCell.font = { name: 'Arial', size: 11, bold: i === 2 }
+    gCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
+    gCell.alignment = { horizontal: 'center', vertical: 'middle' }
+    gCell.border = thinBorder()
+    ws.getRow(r).height = 24
+  })
+
+  // Net revenue big cell
+  const netRow = revStartRow + 4
+  ws.mergeCells(`F${netRow}:G${netRow}`)
+  const netCell2 = ws.getCell(`F${netRow}`)
+  netCell2.value = `صافي الإيرادات:  ${netRevenue.toFixed(2)} ج.م`
+  netCell2.font = { name: 'Arial', size: 13, bold: true, color: { argb: netRevenue >= 0 ? '1B5E20' : 'B71C1C' } }
+  netCell2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: netRevenue >= 0 ? GREEN_MED : RED_LIGHT } }
+  netCell2.alignment = { horizontal: 'center', vertical: 'middle' }
+  netCell2.border = {
+    top:    { style: 'medium', color: { argb: GOLD } },
+    bottom: { style: 'medium', color: { argb: GOLD } },
+    left:   { style: 'medium', color: { argb: GOLD } },
+    right:  { style: 'medium', color: { argb: GOLD } },
+  }
+  ws.getRow(netRow).height = 36
+
+  const buffer = await wb.xlsx.writeBuffer()
+  return Buffer.from(buffer)
+}

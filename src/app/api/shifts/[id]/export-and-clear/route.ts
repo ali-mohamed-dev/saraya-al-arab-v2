@@ -30,6 +30,17 @@ export async function POST(
       return NextResponse.json({ error: 'الوردية مغفلة بالفعل' }, { status: 400 })
     }
 
+    // التحقق من عدم وجود طلبات غير مدفوعة
+    const unpaidCount = await db.order.count({
+      where: { shiftId: id, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+    })
+    if (unpaidCount > 0) {
+      return NextResponse.json({
+        error: `لا يمكن إغلاق الوردية. يوجد ${unpaidCount} طلب لم يتم دفعها بعد.`,
+        unpaidOrders: unpaidCount,
+      }, { status: 400 })
+    }
+
     const totalRevenue = shift.orders.reduce((sum, o) => sum + o.total, 0)
     const totalExpenses = shift.expenses.reduce((sum, e) => sum + e.amount, 0)
     const netRevenue = totalRevenue - totalExpenses
@@ -82,6 +93,9 @@ export async function POST(
       totalExpenses,
       netRevenue
     })
+
+    // 4. حذف جميع الأوردرات الخاصة بهذه الوردية نهائياً عشان الترقيم يبدأ من 1 في الوردية الجديدة
+    await db.order.deleteMany({ where: { shiftId: id } })
 
     return new NextResponse(new Uint8Array(xlsxBuffer), {
       status: 200,

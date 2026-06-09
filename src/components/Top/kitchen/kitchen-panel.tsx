@@ -226,7 +226,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center" dir="rtl">
         <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
           <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
         </div>
@@ -236,7 +236,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftError) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center" dir="rtl">
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-8 text-center max-w-md">
           <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
           <h2 className="mb-2 text-2xl font-bold text-amber-500">خطأ في الاتصال</h2>
@@ -252,7 +252,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
   if (shiftOpen === false) {
     return (
-      <div className="min-h-screen bg-background" dir="rtl">
+      <div className="min-h-dvh bg-background" dir="rtl">
         <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
           <div className="mx-auto flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
             <div className="flex items-center gap-2 md:gap-3">
@@ -287,7 +287,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div
-      className={`min-h-screen bg-background transition-colors duration-300 ${flashActive ? 'bg-yellow-500/5' : ''}`}
+      className={`min-h-dvh bg-background transition-colors duration-300 ${flashActive ? 'bg-yellow-500/5' : ''}`}
       dir="rtl"
     >
       <KitchenHeader
@@ -327,7 +327,7 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
           <KitchenEmptyState />
         )}
 
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence>
           <div className={`grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`}>
             {orders.map((order) => (
               <KitchenOrderCard
@@ -356,3 +356,4 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     </div>
   )
 }
+

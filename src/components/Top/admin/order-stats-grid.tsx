@@ -116,3 +116,4 @@ export function OrderStatsGrid({ stats, currentShiftId }: OrderStatsGridProps) {
     </>
   )
 }
+

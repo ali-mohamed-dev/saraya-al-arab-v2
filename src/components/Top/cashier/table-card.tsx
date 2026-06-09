@@ -114,3 +114,4 @@ export function TableCard({ tableNumber, orders, onViewReceipt }: TableCardProps
     </motion.div>
   )
 }
+

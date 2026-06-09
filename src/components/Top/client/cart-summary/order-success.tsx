@@ -40,3 +40,4 @@ export function OrderSuccess({ onGoHome }: OrderSuccessProps) {
     </div>
   )
 }
+

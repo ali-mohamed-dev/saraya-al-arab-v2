@@ -66,55 +66,55 @@ export function OrderCard({
             ? 'bg-gradient-to-l from-green-500 to-green-400/40' 
             : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'
         }`} />
-        <CardContent className="p-4 space-y-3">
+        <CardContent className="p-3 sm:p-4 space-y-2 sm:space-y-3">
           {/* Header */}
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
-                <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+              <div className={`flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
+                <span className={`text-[10px] sm:text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
                   #{order.orderNumber}
                 </span>
               </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.bg}`}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium ${statusInfo.bg}`}>
                     <span className={statusInfo.color}>{statusInfo.label}</span>
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${typeInfo.color}`}>
+                  <span className={`inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium ${typeInfo.color}`}>
                     {typeInfo.icon}{typeInfo.label}
                   </span>
                   {!order.kitchenAccess && order.status !== 'PENDING' && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400 animate-pulse">
-                      <AlertCircle className="h-2.5 w-2.5" /> إضافات جديدة
+                    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] sm:text-[10px] font-medium text-amber-400 animate-pulse">
+                      <AlertCircle className="h-2 w-2 sm:h-2.5 sm:w-2.5" /> إضافات
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                  <div className="text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground" />
+                  <div className="text-[9px] sm:text-[10px] text-muted-foreground">
                     <RelativeTimeText dateStr={order.createdAt} />
                   </div>
                 </div>
               </div>
             </div>
             {order.tableNumber && (
-              <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px] gap-1">
-                <Utensils className="h-2.5 w-2.5" />طاولة {order.tableNumber}
+              <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[9px] sm:text-[10px] gap-1 shrink-0">
+                <Utensils className="h-2 w-2 sm:h-2.5 sm:w-2.5" />طاولة {order.tableNumber}
               </Badge>
             )}
           </div>
 
           {/* Items Preview */}
-          <div className="space-y-1.5">
+          <div className="space-y-1 sm:space-y-1.5">
             {(expanded ? order.items : order.items.slice(0, 3)).map((item, idx) => (
-              <div key={idx} className="flex items-center justify-between text-sm gap-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">
+              <div key={idx} className="flex items-center justify-between text-[11px] sm:text-sm gap-1.5 sm:gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                  <span className="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded bg-muted text-[8px] sm:text-[10px] font-bold flex-shrink-0">
                     {item.quantity}
                   </span>
-                  <span className="truncate text-xs font-medium leading-tight">{item.mealTitleAr || item.mealTitle}</span>
+                  <span className="break-words text-[11px] sm:text-xs font-medium leading-snug">{item.mealTitleAr || item.mealTitle}</span>
                 </div>
-                <span className="text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
+                <span className="text-[11px] sm:text-xs text-muted-foreground flex-shrink-0 whitespace-nowrap">
                   {(item.price * item.quantity).toFixed(2)} ج.م
                 </span>
               </div>
@@ -122,18 +122,18 @@ export function OrderCard({
             {order.items.length > 3 && !expanded && (
               <button
                 onClick={() => setExpanded(true)}
-                className="text-xs text-[#D4AF37] hover:underline flex items-center gap-1"
+                className="text-[11px] sm:text-xs text-[#D4AF37] hover:underline flex items-center gap-1"
               >
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                 +{order.items.length - 3} أصناف أخرى
               </button>
             )}
             {expanded && order.items.length > 3 && (
               <button
                 onClick={() => setExpanded(false)}
-                className="text-xs text-[#D4AF37] hover:underline flex items-center gap-1"
+                className="text-[11px] sm:text-xs text-[#D4AF37] hover:underline flex items-center gap-1"
               >
-                <ChevronUp className="h-3 w-3" />
+                <ChevronUp className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                 عرض أقل
               </button>
             )}
@@ -141,23 +141,23 @@ export function OrderCard({
 
           {/* Kitchen & Barista Statuses */}
           {(order.kitchenStatus || order.baristaStatus) && order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-1 sm:gap-2 flex-wrap">
               {order.items.some(i => i.preparationArea === 'KITCHEN') && (
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] sm:text-[9px] font-medium ${
                   order.kitchenStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
                   order.kitchenStatus === 'PREPARING' ? 'border-amber-500/30 bg-amber-500/10 text-amber-400' :
                   'border-orange-500/30 bg-orange-500/10 text-orange-400'
                 }`}>
-                  <Flame className="h-2.5 w-2.5" /> مطبخ: {order.kitchenStatus === 'READY' ? 'جاهز' : order.kitchenStatus === 'PREPARING' ? 'يحضر' : 'ينتظر'}
+                  <Flame className="h-2 w-2 sm:h-2.5 sm:w-2.5" /> مطبخ: {order.kitchenStatus === 'READY' ? 'جاهز' : order.kitchenStatus === 'PREPARING' ? 'يحضر' : 'ينتظر'}
                 </span>
               )}
               {order.items.some(i => i.preparationArea === 'BARISTA') && (
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-medium ${
+                <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] sm:text-[9px] font-medium ${
                   order.baristaStatus === 'READY' ? 'border-green-500/30 bg-green-500/10 text-green-400' :
                   order.baristaStatus === 'PREPARING' ? 'border-blue-500/30 bg-blue-500/10 text-blue-400' :
                   'border-blue-500/30 bg-blue-500/10 text-blue-400'
                 }`}>
-                  <Coffee className="h-2.5 w-2.5" /> باريستا: {order.baristaStatus === 'READY' ? 'جاهز' : order.baristaStatus === 'PREPARING' ? 'يحضر' : 'ينتظر'}
+                  <Coffee className="h-2 w-2 sm:h-2.5 sm:w-2.5" /> باريستا: {order.baristaStatus === 'READY' ? 'جاهز' : order.baristaStatus === 'PREPARING' ? 'يحضر' : 'ينتظر'}
                 </span>
               )}
             </div>
@@ -165,7 +165,7 @@ export function OrderCard({
 
           {/* Notes */}
           {order.notes && (
-            <div className="mt-2 rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-400 truncate">
+            <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[9px] sm:text-[10px] text-amber-400 break-words">
               ⚠️ {order.notes}
             </div>
           )}
@@ -174,21 +174,21 @@ export function OrderCard({
 
           {/* إضافات بحاجة لتأكيد الويتر */}
           {!order.kitchenAccess && order.status !== 'PENDING' && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 space-y-2">
-              <div className="flex items-center gap-2 text-amber-400">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span className="text-xs font-bold">إضافات جديدة بحاجة لتأكيدك قبل إرسالها للمطبخ</span>
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 sm:p-2.5 space-y-1.5 sm:space-y-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-amber-400">
+                <AlertCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
+                <span className="text-[11px] sm:text-xs font-bold">إضافات جديدة بحاجة لتأكيدك</span>
               </div>
               <Button
                 size="sm"
                 onClick={onConfirmAdditions}
                 disabled={updatingOrderId === order.id}
-                className="w-full gap-2 bg-amber-600 text-white hover:bg-amber-700 h-9 text-xs font-bold"
+                className="w-full gap-1.5 bg-amber-600 text-white hover:bg-amber-700 h-8 sm:h-9 text-[11px] sm:text-xs font-bold"
               >
                 {updatingOrderId === order.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4" />
+                  <Send className="h-3 w-3 sm:h-4 sm:w-4" />
                 )}
                 تأكيد وإرسال للمطبخ
               </Button>
@@ -196,34 +196,34 @@ export function OrderCard({
           )}
 
           {/* Footer Actions */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] text-muted-foreground">الإجمالي</p>
-              <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground">الإجمالي</p>
+              <p className={`text-base sm:text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
                 {order.total.toFixed(2)} ج.م
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={onViewDetails}
-                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-8 px-3 text-xs font-bold"
+                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
               >
-                <Eye className="h-3.5 w-3.5" />
-                التفاصيل
+                <Eye className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">التفاصيل</span>
               </Button>
               {order.status === 'PENDING' && (
                 <Button
                   size="sm"
                   onClick={onConfirm}
                   disabled={updatingOrderId === order.id}
-                  className="gap-1 bg-green-600 text-white hover:bg-green-700 h-8 px-4 text-xs font-bold"
+                  className="gap-1 bg-green-600 text-white hover:bg-green-700 h-7 sm:h-8 px-2.5 sm:px-4 text-[10px] sm:text-xs font-bold"
                 >
                   {updatingOrderId === order.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 animate-spin" />
                   ) : (
-                    <Check className="h-3.5 w-3.5" />
+                    <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   )}
                   تأكيد
                 </Button>

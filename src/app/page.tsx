@@ -1,11 +1,11 @@
-import { db } from '@/lib/db'
+import { db, withRetry } from '@/lib/db'
 import { ClientPage } from './client-page'
 import type { Meal, Promotion } from '@/lib/saraya/types'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const [meals, promotions, storeSettings] = await Promise.all([
+  const [meals, promotions, storeSettings] = await withRetry(() => Promise.all([
     db.meal.findMany({
       select: { id: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, prepTime: true, category: true, categoryAr: true, preparationArea: true, imageUrl: true, isActive: true },
       orderBy: { createdAt: 'desc' },
@@ -16,7 +16,7 @@ export default async function Home() {
       orderBy: { createdAt: 'desc' },
     }) as unknown as Promotion[],
     db.storeSettings.findUnique({ where: { id: 'default' }, select: { takingOrders: true, message: true } }),
-  ])
+  ]))
 
   return (
     <ClientPage

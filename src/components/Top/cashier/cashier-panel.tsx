@@ -188,7 +188,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const markAsPaid = async (orderId: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'DELIVERED' }),
@@ -212,7 +212,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const confirmOrder = async (orderId: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -239,7 +239,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     setPayingTable(orders[0]?.tableNumber || orderIds[0])
     try {
       const results = await Promise.all(orderIds.map((orderId) =>
-        fetch(`/api/orders/${orderId}/status`, {
+        fetch(`/api/orders/${orderId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'DELIVERED' }),
@@ -285,7 +285,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   // Loading state
   if (shiftLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center" dir="rtl">
+      <div className="min-h-dvh bg-background flex items-center justify-center" dir="rtl">
         <div className="rounded-2xl border border-[#D4AF37]/20 bg-[#D4AF37]/10 p-8 text-center">
           <p className="text-lg font-bold text-[#D4AF37]">جاري التحقق من حالة الشيفت...</p>
         </div>
@@ -296,7 +296,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   // Shift closed state
   if (shiftOpen === false) {
     return (
-      <div className="min-h-screen bg-background" dir="rtl">
+<div className="min-h-dvh bg-background" dir="rtl">
         <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
           <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
             <div className="flex items-center gap-3">
@@ -326,7 +326,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-background" dir="rtl">
+    <div className="min-h-dvh bg-background" dir="rtl">
       {/* New Order Alert Banner */}
       <AnimatePresence>
         {newOrderAlert && (
@@ -359,17 +359,17 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl" className="w-full">
-          <TabsList className="mb-6 flex w-full flex-wrap gap-1 bg-muted/50 p-1 rounded-xl">
+          <TabsList className="mb-6 flex w-full gap-1 bg-muted/50 p-1 rounded-xl overflow-x-auto [&::-webkit-scrollbar]:hidden justify-start">
             {[
-              { value: 'active', icon: <ShoppingBag className="h-4 w-4" />, label: 'الطلبات النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
-              { value: 'delivered', icon: <Receipt className="h-4 w-4" />, label: 'المدفوعة', count: deliveredOrders.length },
-              { value: 'expenses', icon: <TrendingDown className="h-4 w-4" />, label: 'المصروفات', count: expenses.length },
+              { value: 'active', icon: <ShoppingBag className="h-4 w-4" />, label: 'الطلبات النشطة', labelShort: 'النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
+              { value: 'delivered', icon: <Receipt className="h-4 w-4" />, label: 'المدفوعة', labelShort: 'المدفوعة', count: deliveredOrders.length },
+              { value: 'expenses', icon: <TrendingDown className="h-4 w-4" />, label: 'المصروفات', labelShort: 'المصروفات', count: expenses.length },
             ].map(tab => (
               <TabsTrigger key={tab.value} value={tab.value}
-                className={`flex-1 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm relative ${tab.highlight ? 'animate-pulse' : ''}`}>
-                {tab.icon}{tab.label}
+                className={`shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1 relative ${tab.highlight ? 'animate-pulse' : ''}`}>
+                {tab.icon}<span className="sm:hidden">{tab.labelShort}</span><span className="hidden sm:inline">{tab.label}</span>
                 {tab.count > 0 && (
-                  <span className={`absolute -top-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
                     {tab.count}
                   </span>
                 )}
@@ -388,7 +388,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <AnimatePresence mode="popLayout">
+                <AnimatePresence>
                   {groupedTableOrders.map(([table, orders]) => (
                     <TableCard key={`table-${table}`} tableNumber={table} orders={orders} onViewReceipt={setReceiptTableOrders} />
                   ))}
@@ -417,7 +417,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <AnimatePresence mode="popLayout">
+                <AnimatePresence>
                   {deliveredOrders.map(order => (
                     <OrderCard
                       key={order.id}

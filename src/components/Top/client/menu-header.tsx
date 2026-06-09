@@ -47,3 +47,4 @@ export function MenuHeader({ onAdminClick, onTrackClick }: MenuHeaderProps) {
     </header>
   )
 }
+

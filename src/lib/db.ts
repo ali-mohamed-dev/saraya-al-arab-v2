@@ -12,6 +12,22 @@ export const db =
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 
+// Retry helper for Neon cold start (free tier goes to sleep after inactivity)
+export async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (i < retries - 1 && (err as Error)?.message?.includes?.('Can\'t reach database server')) {
+        await new Promise(r => setTimeout(r, delay * (i + 1)))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('Unreachable')
+}
+
 // Helper to safely access Prisma models with a clear error if client is stale
 export function getModel(modelName: string) {
   const model = (db as any)[modelName]

@@ -17,21 +17,16 @@ export async function GET(
       return NextResponse.json({ error: 'Shift not found' }, { status: 404 })
     }
 
-    // Fetch orders and expenses for this shift
-    const orders = await db.order.findMany({
-      where: { shiftId: id, status: 'DELIVERED' },
-      include: { items: true },
-      orderBy: { createdAt: 'desc' },
-    })
-
+    // Fetch expenses for this shift (not deleted on close)
     const expenses = await db.expense.findMany({
       where: { shiftId: id },
       orderBy: { createdAt: 'desc' },
     })
 
-    const totalRevenue = orders.reduce((sum, o) => sum + (o.total ?? 0), 0)
-    const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
-    const netRevenue = totalRevenue - totalExpenses
+    // Orders may have been deleted on close; use stored totals from Shift model
+    const totalRevenue = shift.totalRevenue ?? 0
+    const totalExpenses = shift.totalExpenses ?? expenses.reduce((sum, e) => sum + (e.amount ?? 0), 0)
+    const netRevenue = shift.netRevenue ?? (totalRevenue - totalExpenses)
 
     const xlsxBuffer = await generateShiftExcel({
       shift: {
@@ -41,20 +36,7 @@ export async function GET(
         endedBy: shift.endedBy ?? undefined,
         notes: shift.notes ?? undefined,
       },
-      orders: orders.map((o) => ({
-        orderNumber: o.orderNumber ?? 0,
-        type: o.type,
-        status: o.status,
-        tableNumber: o.tableNumber,
-        total: o.total ?? 0,
-        customerName: o.customerName,
-        createdAt: o.createdAt,
-        items: o.items?.map((it) => ({
-          name: it.mealTitle,
-          qty: it.quantity,
-          price: it.price,
-        })),
-      })),
+      orders: [],
       expenses: expenses.map((e) => ({
         title: e.description ?? '',
         amount: e.amount ?? 0,

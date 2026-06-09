@@ -49,38 +49,38 @@ export function OrderCard({ order, relativeTime, updatingOrderId, onConfirm, onM
         dir="rtl"
       >
         <div className={`h-1 ${isReady ? 'bg-gradient-to-l from-green-500 to-green-400/40' : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'}`} />
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
-                <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>#{order.orderNumber}</span>
+        <CardContent className="p-3 sm:p-4 space-y-2 sm:space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+              <div className={`flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
+                <span className={`text-[10px] sm:text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>#{order.orderNumber}</span>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo?.bg || ''}`}>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium ${statusInfo?.bg || ''}`}>
                     <span className={statusInfo?.color || ''}>{statusInfo?.label || order.status}</span>
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${typeInfo?.color || ''}`}>
+                  <span className={`inline-flex items-center gap-1 text-[9px] sm:text-[10px] font-medium ${typeInfo?.color || ''}`}>
                     {getOrderTypeIcon(order.type)}{typeInfo?.label || order.type}
                   </span>
                 </div>
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">{relativeTime || getRelativeTime(order.createdAt)}</span>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-muted-foreground" />
+                  <span className="text-[9px] sm:text-[10px] text-muted-foreground">{relativeTime || getRelativeTime(order.createdAt)}</span>
                 </div>
               </div>
             </div>
             {order.type === 'DINE_IN' && order.tableNumber && (
-              <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px] gap-1">
-                <Utensils className="h-2.5 w-2.5" />طاولة {order.tableNumber}
+              <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[9px] sm:text-[10px] gap-1 shrink-0">
+                <Utensils className="h-2 w-2 sm:h-2.5 sm:w-2.5" />طاولة {order.tableNumber}
               </Badge>
             )}
           </div>
 
           {/* Kitchen / Barista status indicators */}
-          <div className="flex flex-wrap gap-2 mb-2">
+          <div className="flex flex-wrap gap-1 sm:gap-2">
             {order.items.some(i => i.preparationArea === 'KITCHEN') && (
-              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+              <Badge variant="secondary" className={`text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0 ${
                 order.kitchenStatus === 'READY' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                 order.kitchenStatus === 'CANCELLED' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
                 order.kitchenStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
@@ -90,7 +90,7 @@ export function OrderCard({ order, relativeTime, updatingOrderId, onConfirm, onM
               </Badge>
             )}
             {order.items.some(i => i.preparationArea === 'BARISTA') && (
-              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
+              <Badge variant="secondary" className={`text-[8px] sm:text-[9px] px-1 sm:px-1.5 py-0 ${
                 order.baristaStatus === 'READY' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
                 order.baristaStatus === 'CANCELLED' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
                 order.baristaStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
@@ -101,44 +101,44 @@ export function OrderCard({ order, relativeTime, updatingOrderId, onConfirm, onM
             )}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>{order.customerName}</span>
-            {order.customerPhone && <span className="flex items-center gap-1" dir="ltr"><Phone className="h-3 w-3" />{order.customerPhone}</span>}
+          <div className="flex items-center gap-2 sm:gap-3 text-[11px] sm:text-xs text-muted-foreground">
+            <span className="break-words">{order.customerName}</span>
+            {order.customerPhone && <span className="flex items-center gap-1 shrink-0" dir="ltr"><Phone className="h-2.5 w-2.5 sm:h-3 sm:w-3" />{order.customerPhone}</span>}
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1 sm:space-y-1.5">
             {order.items.slice(0, 3).map(item => (
-              <div key={item.id} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">{item.quantity}</span>
-                  <span className="truncate">{item.mealTitleAr || item.mealTitle}</span>
+              <div key={item.id} className="flex items-center justify-between text-[11px] sm:text-xs">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                  <span className="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded bg-muted text-[8px] sm:text-[10px] font-bold flex-shrink-0">{item.quantity}</span>
+                  <span className="break-words leading-snug">{item.mealTitleAr || item.mealTitle}</span>
                 </div>
-                <span className="text-muted-foreground flex-shrink-0 mr-2">{(item.price * item.quantity).toFixed(2)} ج.م</span>
+                <span className="text-muted-foreground flex-shrink-0 mr-1 sm:mr-2">{(item.price * item.quantity).toFixed(2)} ج.م</span>
               </div>
             ))}
-            {order.items.length > 3 && <p className="text-[10px] text-muted-foreground text-center">+{order.items.length - 3} أصناف أخرى</p>}
+            {order.items.length > 3 && <p className="text-[9px] sm:text-[10px] text-muted-foreground text-center">+{order.items.length - 3} أصناف أخرى</p>}
           </div>
           <Separator className="bg-border/20" />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] text-muted-foreground">الإجمالي</p>
-              <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>{order.total.toFixed(2)} ج.م</p>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[9px] sm:text-[10px] text-muted-foreground">الإجمالي</p>
+              <p className={`text-base sm:text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>{order.total.toFixed(2)} ج.م</p>
             </div>
             {order.status === 'PENDING' && order.type !== 'DINE_IN' ? (
               <Button size="sm" onClick={(e) => { e.stopPropagation(); onConfirm(order.id) }} disabled={updatingOrderId === order.id}
-                className="gap-2 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold h-9 px-4">
-                {updatingOrderId === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                className="gap-1.5 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 font-bold h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] sm:text-sm">
+                {updatingOrderId === order.id ? <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" /> : <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />}
                 تأكيد
               </Button>
             ) : isReady ? (
               <Button size="sm" onClick={(e) => { e.stopPropagation(); onMarkAsPaid(order.id) }} disabled={updatingOrderId === order.id}
-                className="gap-2 bg-green-600 text-white hover:bg-green-500 font-bold h-9 px-4">
-                {updatingOrderId === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <BadgeCheck className="h-4 w-4" />}
+                className="gap-1.5 bg-green-600 text-white hover:bg-green-500 font-bold h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] sm:text-sm">
+                {updatingOrderId === order.id ? <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 animate-spin" /> : <BadgeCheck className="h-3 w-3 sm:h-4 sm:w-4" />}
                 تم الدفع
               </Button>
             ) : (
               <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onViewReceipt(order) }}
-                className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10">
-                <Receipt className="h-4 w-4" />الفاتورة
+                className="gap-1.5 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8 sm:h-9 px-2.5 sm:px-4 text-[11px] sm:text-sm">
+                <Receipt className="h-3 w-3 sm:h-4 sm:w-4" />الفاتورة
               </Button>
             )}
           </div>
@@ -147,3 +147,4 @@ export function OrderCard({ order, relativeTime, updatingOrderId, onConfirm, onM
     </motion.div>
   )
 }
+

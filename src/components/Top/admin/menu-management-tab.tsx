@@ -129,9 +129,12 @@ export function MenuManagementTab() {
       if (res.ok) {
         toast({ title: 'تم التحديث', description: `تم ${!meal.isActive ? 'تفعيل' : 'إيقاف'} الطبق` })
         fetchMeals()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: (err as { error?: string }).error || 'فشل تحديث حالة الطبق', variant: 'destructive' })
       }
     } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+      toast({ title: 'خطأ', description: 'فشل الاتصال بالخادم', variant: 'destructive' })
     }
   }
 
@@ -383,3 +386,4 @@ export function MenuManagementTab() {
     </Card>
   )
 }
+

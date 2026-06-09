@@ -142,7 +142,7 @@ export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onC
                   <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">
                     {item.quantity}
                   </span>
-                  <span className="truncate">{item.mealTitleAr || item.mealTitle}</span>
+                  <span className="break-words leading-snug">{item.mealTitleAr || item.mealTitle}</span>
                 </div>
                 <span className="text-muted-foreground flex-shrink-0 mr-2">
                   {(item.price * item.quantity).toFixed(2)} ج.م

@@ -61,3 +61,4 @@ export function MealCardSimple({ meal, onViewDetail, priority }: MealCardProps) 
     </motion.div>
   )
 }
+

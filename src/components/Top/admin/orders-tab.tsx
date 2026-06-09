@@ -334,7 +334,7 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence>
             {orders.map((order) => (
               <OrderCard
                 key={order.id}

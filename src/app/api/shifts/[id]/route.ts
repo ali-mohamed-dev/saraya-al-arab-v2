@@ -20,6 +20,17 @@ export async function PUT(
       return NextResponse.json({ error: 'الشيفت مغلق بالفعل' }, { status: 400 })
     }
 
+    // التحقق من عدم وجود طلبات غير مدفوعة
+    const unpaidCount = await db.order.count({
+      where: { shiftId: id, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+    })
+    if (unpaidCount > 0) {
+      return NextResponse.json({
+        error: `لا يمكن إغلاق الوردية. يوجد ${unpaidCount} طلب لم يتم دفعها بعد.`,
+        unpaidOrders: unpaidCount,
+      }, { status: 400 })
+    }
+
     // Calculate revenue from DELIVERED orders in this shift
     const orders = await db.order.findMany({
       where: { shiftId: id, status: 'DELIVERED' },
@@ -47,6 +58,9 @@ export async function PUT(
         notes: notes || null,
       },
     })
+
+    // حذف جميع الأوردرات الخاصة بهذه الوردية نهائياً عشان الترقيم يبدأ من 1 في الوردية الجديدة
+    await db.order.deleteMany({ where: { shiftId: id } })
 
     return NextResponse.json(updatedShift)
   } catch (error) {

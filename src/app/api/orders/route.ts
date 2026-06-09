@@ -387,17 +387,20 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── Create New Order ─────────────────────────────────
+    // Order number resets to 1 per shift (since orders are deleted on shift close).
     // Retry loop handles the race condition where two concurrent requests
     // read the same max orderNumber and both try to insert the same value.
     let order
     let attempts = 0
+    const effectiveShiftId = shiftId || openShift.id
     while (attempts < 5) {
       attempts++
       const maxOrder = await db.order.findFirst({
+        where: { shiftId: effectiveShiftId },
         orderBy: { orderNumber: 'desc' },
         select: { orderNumber: true },
       })
-      const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1001
+      const orderNumber = maxOrder ? maxOrder.orderNumber + 1 : 1
 
       const orderData: any = {
         orderNumber,

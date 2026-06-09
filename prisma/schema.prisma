@@ -106,7 +106,7 @@ model Shift {
 
 model Order {
   id              String      @id @default(cuid())
-  orderNumber     Int         @unique
+  orderNumber     Int
   type            String      @default("DINE_IN") // DINE_IN, TAKEAWAY, DELIVERY
   status          String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, READY_TO_PAY, DELIVERED, CANCELLED
   customerName    String      @default("")
@@ -129,6 +129,7 @@ model Order {
   shift           Shift?      @relation(fields: [shiftId], references: [id])
   items           OrderItem[]
 
+  @@unique([shiftId, orderNumber])
   @@index([status])
   @@index([shiftId])
   @@index([createdAt])

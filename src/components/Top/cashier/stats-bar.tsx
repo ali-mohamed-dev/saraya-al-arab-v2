@@ -18,15 +18,15 @@ export function StatsBar({ activeCount, readyCount, totalExpenses }: StatsBarPro
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4">
       {stats.map((s, i) => (
         <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
           <Card className="border-border/50 bg-card">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${s.bg}`}>{s.icon}</div>
-              <div>
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                <p className="text-xs text-muted-foreground">{s.label}</p>
+            <CardContent className="p-3 sm:p-4 flex items-center gap-2 sm:gap-3">
+              <div className={`flex h-8 w-8 sm:h-12 sm:w-12 items-center justify-center rounded-lg sm:rounded-xl ${s.bg}`}>{s.icon}</div>
+              <div className="min-w-0">
+                <p className={`text-base sm:text-xl font-bold ${s.color}`}>{s.value}</p>
+                <p className="text-[10px] sm:text-xs text-muted-foreground truncate">{s.label}</p>
               </div>
             </CardContent>
           </Card>
@@ -35,3 +35,4 @@ export function StatsBar({ activeCount, readyCount, totalExpenses }: StatsBarPro
     </div>
   )
 }
+

@@ -28,13 +28,13 @@ export function WaiterHeader({
             <UtensilsCrossed className="h-5 w-5 text-[#D4AF37]" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الويتر</h1>
-            <p className="text-xs text-muted-foreground">توب </p>
+            <h1 className="text-base sm:text-lg font-bold text-[#D4AF37]">لوحة الويتر</h1>
+            <p className="hidden sm:block text-xs text-muted-foreground">توب </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Active counts badges */}
-          <div className="hidden sm:flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-3">
+            {/* Active counts badges */}
+            <div className="hidden sm:flex items-center gap-2">
             {pendingCount > 0 && (
               <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/30 gap-1">
                 <Clock className="h-3 w-3" />
@@ -61,7 +61,7 @@ export function WaiterHeader({
             )}
           </div>
           <ThemeToggle />
-          <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground hover:text-red-400">
+          <Button variant="ghost" onClick={onLogout} className="gap-1 sm:gap-2 text-muted-foreground hover:text-red-400 px-2 sm:px-4">
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">خروج</span>
           </Button>
@@ -70,3 +70,4 @@ export function WaiterHeader({
     </header>
   )
 }
+

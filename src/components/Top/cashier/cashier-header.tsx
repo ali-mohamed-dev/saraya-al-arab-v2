@@ -20,24 +20,26 @@ export function CashierHeader({ username, readyCount, onRefresh, onLogout }: Cas
             <DollarSign className="h-5 w-5 text-[#D4AF37]" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[#D4AF37]">لوحة الكاشير</h1>
-            <p className="text-xs text-muted-foreground">توب  — {username}</p>
+            <h1 className="text-base sm:text-lg font-bold text-[#D4AF37]">لوحة الكاشير</h1>
+            <p className="hidden sm:block text-xs text-muted-foreground">توب  — {username}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {readyCount > 0 && (
-            <div className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-1.5 animate-pulse">
+            <div className="flex items-center gap-1.5 bg-green-500/10 border border-green-500/30 rounded-lg px-2 sm:px-3 py-1.5 animate-pulse">
               <Bell className="h-4 w-4 text-green-400" />
-              <span className="text-sm font-bold text-green-400">{readyCount} جاهز للدفع</span>
+              <span className="text-sm font-bold text-green-400">{readyCount} <span className="hidden sm:inline">جاهز للدفع</span></span>
             </div>
           )}
           <ThemeToggle />
           
-          <Button variant="ghost" onClick={onLogout} className="gap-2 text-muted-foreground hover:text-red-400">
-            <LogOut className="h-4 w-4" />خروج
+          <Button variant="ghost" onClick={onLogout} className="gap-1 sm:gap-2 text-muted-foreground hover:text-red-400 px-2 sm:px-4">
+            <LogOut className="h-4 w-4" />
+            <span className="hidden sm:inline">خروج</span>
           </Button>
         </div>
       </div>
     </header>
   )
 }
+

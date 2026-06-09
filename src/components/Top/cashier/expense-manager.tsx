@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Trash2, TrendingDown, Loader2, AlertCircle, Pencil, X, Check } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,13 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { getRelativeTime, safeParseFloat, playNotificationSound } from '@/lib/saraya/helpers'
-
-const EXPENSE_CATEGORIES = ['خامات', 'رواتب', 'إيجار', 'فواتير', 'صيانة', 'تسويق', 'عام' , 'سلف العماله' , 'تحميلات']
 
 interface CashierExpense {
   id: string
@@ -44,6 +39,7 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
   const [expenseCategory, setExpenseCategory] = useState('عام')
   const [savingExpense, setSavingExpense] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
 
   // تعديل مصروف
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -51,6 +47,16 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
   const [editAmount, setEditAmount] = useState('')
   const [editCategory, setEditCategory] = useState('عام')
   const [savingEdit, setSavingEdit] = useState(false)
+
+  // جلب الفئات المتاحة من كل المصروفات (أدمن + كاشير)
+  useEffect(() => {
+    fetch('/api/expenses/categories')
+      .then(r => r.ok ? r.json() : [])
+      .then((cats: string[]) => {
+        if (cats.length > 0) setAvailableCategories(cats)
+      })
+      .catch(() => {})
+  }, [])
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
 
@@ -184,14 +190,18 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
             </div>
             <div className="space-y-2">
               <Label>الفئة</Label>
-              <Select value={expenseCategory} onValueChange={setExpenseCategory} dir="rtl">
-                <SelectTrigger className="bg-muted/50 border-border/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {EXPENSE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div className="relative">
+                <input
+                  list="cashier-cat-list"
+                  placeholder="اختر فئة أو اكتب فئة جديدة..."
+                  value={expenseCategory}
+                  onChange={e => { setExpenseCategory(e.target.value); setError(null) }}
+                  className="w-full rounded-lg border border-border/50 bg-muted/50 px-3 py-2 text-sm text-right"
+                />
+                <datalist id="cashier-cat-list">
+                  {availableCategories.map(c => <option key={c} value={c} />)}
+                </datalist>
+              </div>
             </div>
 
             {error && (
@@ -258,14 +268,17 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">الفئة</Label>
-                        <Select value={editCategory} onValueChange={setEditCategory} dir="rtl">
-                          <SelectTrigger className="bg-muted/50 border-border/50 text-sm h-9">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {EXPENSE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                        <div className="relative">
+                          <input
+                            list="edit-cashier-cat-list"
+                            value={editCategory}
+                            onChange={e => setEditCategory(e.target.value)}
+                            className="w-full rounded-lg border border-border/50 bg-muted/50 px-2 py-1.5 text-sm text-right"
+                          />
+                          <datalist id="edit-cashier-cat-list">
+                            {availableCategories.map(c => <option key={c} value={c} />)}
+                          </datalist>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -327,3 +340,4 @@ export function ExpenseManager({ expenses, currentShiftId, username, onExpensesC
     </div>
   )
 }
+

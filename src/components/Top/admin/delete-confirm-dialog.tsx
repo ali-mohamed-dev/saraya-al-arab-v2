@@ -41,3 +41,4 @@ export function DeleteConfirmDialog({ deleteTarget, onClose, onConfirm }: Delete
     </Dialog>
   )
 }
+

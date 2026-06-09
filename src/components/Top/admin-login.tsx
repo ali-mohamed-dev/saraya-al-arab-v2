@@ -58,7 +58,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       {/* Theme toggle in top corner */}
       <div className="fixed top-4 left-4 z-50">
         <ThemeToggle />
@@ -165,3 +165,4 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
     </div>
   )
 }
+

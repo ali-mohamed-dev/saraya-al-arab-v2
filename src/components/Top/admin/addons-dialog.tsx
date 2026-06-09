@@ -259,3 +259,4 @@ export function AddonsDialog({ meal, onClose }: AddonsDialogProps) {
     </Dialog>
   )
 }
+

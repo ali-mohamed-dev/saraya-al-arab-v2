@@ -18,7 +18,9 @@ async function main() {
   const staff = [
     { username: 'waiter1', password: await bcrypt.hash('waiter123', 12), role: 'WAITER' },
     { username: 'waiter2', password: await bcrypt.hash('waiter123', 12), role: 'WAITER' },
+    { username: 'waiter3', password: await bcrypt.hash('waiter123', 12), role: 'WAITER' },
     { username: 'cashier1', password: await bcrypt.hash('cashier123', 12), role: 'CASHIER' },
+    { username: 'cashier2', password: await bcrypt.hash('cashier123', 12), role: 'CASHIER' },
     { username: 'kitchen1', password: await bcrypt.hash('kitchen123', 12), role: 'KITCHEN' },
     { username: 'kitchen2', password: await bcrypt.hash('kitchen123', 12), role: 'KITCHEN' },
     { username: 'barista1', password: await bcrypt.hash('barista123', 12), role: 'BARISTA' },

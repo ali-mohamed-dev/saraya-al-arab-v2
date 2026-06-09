@@ -30,3 +30,4 @@ export function RelativeTime({ dateStr, className }: RelativeTimeProps) {
 
   return <span className={className}>{text}</span>
 }
+

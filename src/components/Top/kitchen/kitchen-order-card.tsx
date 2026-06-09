@@ -240,3 +240,4 @@ export function KitchenOrderCard({ order, relativeTime, isUpdating, onUpdateStat
     </motion.div>
   )
 }
+

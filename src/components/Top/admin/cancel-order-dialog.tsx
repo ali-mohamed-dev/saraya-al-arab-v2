@@ -46,3 +46,4 @@ export function CancelOrderDialog({ order, onClose, onConfirm }: CancelOrderDial
     </Dialog>
   )
 }
+

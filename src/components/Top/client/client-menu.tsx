@@ -206,7 +206,7 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-dvh bg-background flex flex-col">
       {takingOrders === false && (
         <div className="bg-red-500/10 border-b border-red-500/20 px-4 py-2 text-center" dir="rtl">
           <span className="text-sm text-red-400 font-medium">

@@ -116,3 +116,4 @@ export function EditMealDialog({ meal, onClose, onSave }: EditMealDialogProps) {
     </Dialog>
   )
 }
+

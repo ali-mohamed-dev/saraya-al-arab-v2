@@ -200,7 +200,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   const updateOrderStatus = useCallback(async (orderId: string, newStatus: string) => {
     setUpdatingOrderId(orderId)
     try {
-      const res = await fetch(`/api/orders/${orderId}/status`, {
+      const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -436,7 +436,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background" dir="rtl">
+    <div className="min-h-dvh bg-background" dir="rtl">
       {/* حل مشكلة السكرول في النوافذ المنبثقة */}
       <style jsx global>{`
         [role="dialog"] {
@@ -457,14 +457,14 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
         <div className="flex gap-1 rounded-xl bg-muted/50 p-1">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium transition-all ${
               activeTab === 'orders'
                 ? 'bg-[#D4AF37] text-black shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
             }`}
           >
-            <ClipboardList className="h-4 w-4" />
-            الطلبات
+            <ClipboardList className="h-4 w-4 shrink-0" />
+            <span className="truncate">الطلبات</span>
             {orders.length > 0 && (
               <Badge className={`h-5 min-w-[20px] text-[10px] px-1.5 ${
                 activeTab === 'orders' ? 'bg-black/20 text-black' : 'bg-[#D4AF37]/20 text-[#D4AF37]'
@@ -475,14 +475,14 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           </button>
           <button
             onClick={() => setActiveTab('tables')}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+            className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium transition-all ${
               activeTab === 'tables'
                 ? 'bg-[#D4AF37] text-black shadow-sm'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted'
             }`}
           >
-            <Armchair className="h-4 w-4" />
-            الطاولات
+            <Armchair className="h-4 w-4 shrink-0" />
+            <span className="truncate">الطاولات</span>
           </button>
         </div>
       </div>

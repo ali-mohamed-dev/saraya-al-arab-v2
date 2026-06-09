@@ -167,6 +167,8 @@ export async function PUT(
 
     // Release phone rate limit when order is delivered or cancelled
     if (body.status === 'DELIVERED' || body.status === 'CANCELLED') {
+      updateData.kitchenStatus = body.status
+      updateData.baristaStatus = body.status
       if (existing.customerPhone) {
         releasePhoneOrder(existing.customerPhone)
       }

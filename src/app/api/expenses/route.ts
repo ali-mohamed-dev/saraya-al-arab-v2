@@ -4,10 +4,18 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
+    const adminExpense = searchParams.get('adminExpense')
     const shiftId = searchParams.get('shiftId')
+    const shiftIds = searchParams.get('shiftIds')
 
-    const where: Record<string, string> = {}
-    if (shiftId) where.shiftId = shiftId
+    const where: Record<string, unknown> = {}
+    if (adminExpense === 'true') {
+      where.shiftId = null
+    } else if (shiftIds) {
+      where.shiftId = { in: shiftIds.split(',').filter(Boolean) }
+    } else if (shiftId) {
+      where.shiftId = shiftId
+    }
 
     const expenses = await db.expense.findMany({
       where,

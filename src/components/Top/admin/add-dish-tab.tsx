@@ -225,3 +225,4 @@ export function AddDishTab() {
     </Card>
   )
 }
+

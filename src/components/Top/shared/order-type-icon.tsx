@@ -33,3 +33,4 @@ export function OrderTypeIcon({ type, className }: OrderTypeIconProps) {
     default: return <Package className={className} />
   }
 }
+

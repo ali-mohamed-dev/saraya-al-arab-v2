@@ -3,7 +3,7 @@
 import { useAdminAuth } from '@/lib/saraya/hooks'
 import {
   UtensilsCrossed, Plus, Megaphone, ClipboardList,
-  DollarSign, Users, Armchair, Tag, TrendingDown
+  DollarSign, Users, Armchair, Tag, FileSpreadsheet
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminHeader } from './admin-header'
@@ -26,7 +26,7 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
   const { username: adminUsername } = useAdminAuth()
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-dvh bg-background">
       <AdminHeader onLogout={onLogout} />
 
       <main className="mx-auto max-w-7xl p-4 md:p-6">
@@ -68,9 +68,9 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
               <span className="sm:hidden">الموظفين</span>
             </TabsTrigger>
             <TabsTrigger value="expenses" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
-              <TrendingDown className="h-4 w-4" />
-              <span className="hidden sm:inline">المصروفات</span>
-              <span className="sm:hidden">المصروفات</span>
+              <FileSpreadsheet className="h-4 w-4" />
+              <span className="hidden sm:inline">التقارير الشهرية</span>
+              <span className="sm:hidden">تقارير</span>
             </TabsTrigger>
             <TabsTrigger value="categories" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <Tag className="h-4 w-4" />
@@ -119,3 +119,4 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
     </div>
   )
 }
+

@@ -159,3 +159,4 @@ export function CartItemsList({ items, onUpdateQuantity, onRemoveItem }: CartIte
     </div>
   )
 }
+
