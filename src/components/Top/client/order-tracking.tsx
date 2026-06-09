@@ -96,6 +96,7 @@ export function OrderTracking({ orderId, onBackToMenu }: OrderTrackingProps) {
     try {
       const response = await fetch(`/api/orders/${orderId}`)
       if (!response.ok) {
+        localStorage.removeItem('saraya-active-order-id')
         throw new Error('فشل في جلب بيانات الطلب')
       }
       const data = await response.json()

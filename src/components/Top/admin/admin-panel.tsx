@@ -2,19 +2,16 @@
 
 import { useAdminAuth } from '@/lib/saraya/hooks'
 import {
-  UtensilsCrossed, Plus, Megaphone, ClipboardList,
-  DollarSign, Users, Armchair, Tag, FileSpreadsheet
+  UtensilsCrossed, ClipboardList,
+  DollarSign, Users, Armchair, FileSpreadsheet
 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AdminHeader } from './admin-header'
 import { MenuManagementTab } from './menu-management-tab'
-import { AddDishTab } from './add-dish-tab'
-import { PromotionsTab } from './promotions-tab'
 import { OrdersTab } from './orders-tab'
 import { ShiftManagement } from './shift-management'
 import { StaffManagement } from './staff-management'
 import { TableManagement } from './table-management'
-import { CategoriesTab } from './categories-tab'
 import { AdminExpensesTab } from './admin-expenses-tab'
 
 interface AdminPanelProps {
@@ -22,7 +19,6 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ onLogout }: AdminPanelProps) {
-  // Use shared auth hook for admin username (handles sessionStorage internally)
   const { username: adminUsername } = useAdminAuth()
 
   return (
@@ -36,16 +32,6 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
               <UtensilsCrossed className="h-4 w-4" />
               <span className="hidden sm:inline">إدارة المنيو</span>
               <span className="sm:hidden">المنيو</span>
-            </TabsTrigger>
-            <TabsTrigger value="add" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">إضافة طبق</span>
-              <span className="sm:hidden">إضافة</span>
-            </TabsTrigger>
-            <TabsTrigger value="promos" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
-              <Megaphone className="h-4 w-4" />
-              <span className="hidden sm:inline">إدارة العروض</span>
-              <span className="sm:hidden">العروض</span>
             </TabsTrigger>
             <TabsTrigger value="orders" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
               <ClipboardList className="h-4 w-4" />
@@ -72,23 +58,10 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
               <span className="hidden sm:inline">التقارير الشهرية</span>
               <span className="sm:hidden">تقارير</span>
             </TabsTrigger>
-            <TabsTrigger value="categories" className="shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1">
-              <Tag className="h-4 w-4" />
-              <span className="hidden sm:inline">التصنيفات</span>
-              <span className="sm:hidden">التصنيفات</span>
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="menu">
             <MenuManagementTab />
-          </TabsContent>
-
-          <TabsContent value="add">
-            <AddDishTab />
-          </TabsContent>
-
-          <TabsContent value="promos">
-            <PromotionsTab />
           </TabsContent>
 
           <TabsContent value="orders">
@@ -110,13 +83,8 @@ export function AdminPanel({ onLogout }: AdminPanelProps) {
           <TabsContent value="expenses">
             <AdminExpensesTab />
           </TabsContent>
-
-          <TabsContent value="categories">
-            <CategoriesTab />
-          </TabsContent>
         </Tabs>
       </main>
     </div>
   )
 }
-

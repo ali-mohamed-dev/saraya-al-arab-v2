@@ -92,7 +92,7 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
         </ErrorBoundary>
       )
     case 'staff-login':
-      return <ErrorBoundary><AdminLogin onLogin={handleLoginSuccess} /></ErrorBoundary>
+      return <ErrorBoundary><AdminLogin onLogin={handleLoginSuccess} onBack={() => setView('menu')} /></ErrorBoundary>
     case 'admin-panel':
       return <ErrorBoundary fallbackTitle="حدث خطأ في لوحة الإدارة"><AdminPanel onLogout={handleLogout} /></ErrorBoundary>
     case 'waiter-panel':

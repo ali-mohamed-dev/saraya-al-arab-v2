@@ -22,6 +22,7 @@ interface ShiftManagementProps {
 export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   const { toast } = useToast()
   const [currentShift, setCurrentShift] = useState<ShiftWithDetails | null>(null)
+  const [shiftExpenses, setShiftExpenses] = useState<ExpenseItem[]>([])
   const [adminExpenses, setAdminExpenses] = useState<ExpenseItem[]>([])
   const [shiftOrders, setShiftOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,10 +39,12 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         const shift = await shiftRes.json()
         setCurrentShift(shift)
         if (shift) {
-          const [admExpRes, ordRes] = await Promise.all([
+          const [expRes, admExpRes, ordRes] = await Promise.all([
+            fetch(`/api/expenses?shiftId=${shift.id}`),
             fetch('/api/expenses?adminExpense=true'),
             fetch(`/api/orders?shiftId=${shift.id}&status=DELIVERED`),
           ])
+          if (expRes.ok) setShiftExpenses(await expRes.json())
           if (admExpRes.ok) setAdminExpenses(await admExpRes.json())
           if (ordRes.ok) {
             const rawOrders = await ordRes.json()
@@ -49,11 +52,13 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
           }
         } else {
           setCurrentShift(null)
+          setShiftExpenses([])
           setAdminExpenses([])
           setShiftOrders([])
         }
       } else {
         setCurrentShift(null)
+        setShiftExpenses([])
         setAdminExpenses([])
         setShiftOrders([])
       }
@@ -119,7 +124,9 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   }
 
   const totalRevenue = shiftOrders.reduce((s, o) => s + o.total, 0)
-  const totalExpenses = adminExpenses.reduce((s, e) => s + e.amount, 0)
+  const totalShiftExpenses = shiftExpenses.reduce((s, e) => s + e.amount, 0)
+  const totalAdminExpenses = adminExpenses.reduce((s, e) => s + e.amount, 0)
+  const fmt = (n: number) => n.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /></div>
 
@@ -140,9 +147,9 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'الإيرادات', value: `${totalRevenue.toFixed(2)} ج.م`, color: 'text-[#D4AF37]' },
-                { label: 'المصروفات', value: `${totalExpenses.toFixed(2)} ج.م`, color: 'text-red-400' },
-                { label: 'صافي الإيراد', value: `${(totalRevenue - totalExpenses).toFixed(2)} ج.م`, color: totalRevenue - totalExpenses >= 0 ? 'text-emerald-400' : 'text-red-400' },
+                { label: 'الإيرادات', value: `${fmt(totalRevenue)} ج.م`, color: 'text-[#D4AF37]' },
+                { label: 'مصروفات الوردية', value: `${fmt(totalShiftExpenses)} ج.م`, color: 'text-red-400' },
+                { label: 'صافي الوردية', value: `${fmt(totalRevenue - totalShiftExpenses)} ج.م`, color: totalRevenue - totalShiftExpenses >= 0 ? 'text-emerald-400' : 'text-red-400' },
                 { label: 'طلبات مكتملة', value: shiftOrders.length, color: 'text-blue-400' },
               ].map((s, i) => (
                 <Card key={i} className="border-border/40 bg-card">
@@ -152,6 +159,10 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>إجمالي المصروفات الإدارية (الشهرية): {fmt(totalAdminExpenses)} ج.م</p>
+              <p>عدد مصروفات الوردية: {shiftExpenses.length}</p>
             </div>
             <div className="text-sm text-muted-foreground">
               بدأ: {new Date(currentShift.startedAt).toLocaleString('ar-EG')} — بواسطة {currentShift.startedBy}
@@ -189,17 +200,20 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
             <div className="space-y-4 py-2">
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-lg bg-muted/50 p-3">
-                  <p className="text-lg font-bold text-[#D4AF37]">{totalRevenue.toFixed(0)} ج.م</p>
+                  <p className="text-lg font-bold text-[#D4AF37]">{fmt(totalRevenue)} ج.م</p>
                   <p className="text-xs text-muted-foreground">إيراد</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-3">
-                  <p className="text-lg font-bold text-red-400">{totalExpenses.toFixed(0)} ج.م</p>
-                  <p className="text-xs text-muted-foreground">مصروفات</p>
+                  <p className="text-lg font-bold text-red-400">{fmt(totalShiftExpenses)} ج.م</p>
+                  <p className="text-xs text-muted-foreground">مصروفات الوردية</p>
                 </div>
                 <div className="rounded-lg bg-muted/50 p-3">
-                  <p className={`text-lg font-bold ${totalRevenue - totalExpenses >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(totalRevenue - totalExpenses).toFixed(0)} ج.م</p>
-                  <p className="text-xs text-muted-foreground">صافي</p>
+                  <p className={`text-lg font-bold ${totalRevenue - totalShiftExpenses >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmt(totalRevenue - totalShiftExpenses)} ج.م</p>
+                  <p className="text-xs text-muted-foreground">صافي الوردية</p>
                 </div>
+              </div>
+              <div className="text-xs text-center text-muted-foreground">
+                المصروفات الإدارية (الشهرية): {fmt(totalAdminExpenses)} ج.م
               </div>
               <div className="space-y-2">
                 <Label>ملاحظات (اختياري)</Label>

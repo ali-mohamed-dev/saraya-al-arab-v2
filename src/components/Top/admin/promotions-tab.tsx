@@ -58,7 +58,7 @@ export function PromotionsTab() {
   const fetchPromotions = useCallback(async () => {
     try {
       setLoadingPromos(true)
-      const res = await fetch('/api/promotions')
+      const res = await fetch(`/api/promotions?t=${Date.now()}`)
       if (res.ok) setPromotions(await res.json())
     } catch (err) {
       console.error('Failed to fetch promotions:', err)

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Lock, Eye, EyeOff, Loader2, UtensilsCrossed } from 'lucide-react'
+import { ArrowRight, Lock, Eye, EyeOff, Loader2, UtensilsCrossed } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ import { ThemeToggle } from '@/components/Top/shared/theme-toggle'
 
 interface AdminLoginProps {
   onLogin: (role: string, username: string) => void
+  onBack?: () => void
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -21,7 +22,7 @@ const ROLE_LABELS: Record<string, string> = {
   BARISTA: 'باريستا',
 }
 
-export function AdminLogin({ onLogin }: AdminLoginProps) {
+export function AdminLogin({ onLogin, onBack }: AdminLoginProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -60,7 +61,8 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-4">
       {/* Theme toggle in top corner */}
-      <div className="fixed top-4 left-4 z-50">
+      <div className="fixed top-4 left-4 z-50 flex items-center gap-2">
+        
         <ThemeToggle />
       </div>
       <motion.div
@@ -70,12 +72,21 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
         className="w-full max-w-md"
       >
         <Card className="border-[#D4AF37]/20 bg-card overflow-hidden">
-          {/* Gold accent line */}
           <div className="h-1 bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent" />
 
           <CardHeader className="text-center pb-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-muted/80 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                title="رجوع"
+              >
+                <ArrowRight className="h-5 w-5" />
+              </button>
+            )}
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#D4AF37]/10">
               <Lock className="h-8 w-8 text-[#D4AF37]" />
+              
             </div>
             <CardTitle className="text-2xl font-bold text-[#D4AF37]" dir="rtl">
               دخول الموظفين
@@ -149,15 +160,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
                 تسجيل الدخول
               </Button>
 
-              {/* Demo account info - role names only, no passwords */}
-              <div className="rounded-lg border border-[#D4AF37]/20 bg-[#D4AF37]/5 p-3 space-y-1" dir="rtl">
-                <p className="text-xs font-semibold text-[#D4AF37]">الأدوار المتاحة:</p>
-                {Object.entries(ROLE_LABELS).map(([key, label]) => (
-                  <p key={key} className="text-xs text-muted-foreground">
-                    {label} ({key.toLowerCase()})
-                  </p>
-                ))}
-              </div>
+              
             </form>
           </CardContent>
         </Card>

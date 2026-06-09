@@ -2,3 +2,11 @@ node_modules/
 .next/
 *.db
 .env
+*.log
+*.mjs
+*.cjs
+meals.json
+tables.json
+simulation-report.xlsx
+scripts/check-data.ts
+scripts/list-meals.ts

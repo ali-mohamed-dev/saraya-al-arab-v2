@@ -74,13 +74,16 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
     const activeOrderId = localStorage.getItem('saraya-active-order-id')
     if (activeOrderId) {
       fetch(`/api/orders/${activeOrderId}`)
-        .then(res => res.ok ? res.json() : null)
+        .then(res => {
+          if (!res.ok) { localStorage.removeItem('saraya-active-order-id'); return null }
+          return res.json()
+        })
         .then(order => {
           if (order && ['DELIVERED', 'CANCELLED'].includes(order.status)) {
             localStorage.removeItem('saraya-active-order-id')
           }
         })
-        .catch(() => {})
+        .catch(() => { localStorage.removeItem('saraya-active-order-id') })
     }
   }, [])
 
@@ -275,7 +278,7 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
 
         {activeCategory === 'عروض' ? (
           promotionsLoading ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-52 rounded-xl bg-muted animate-pulse" />
               ))}
@@ -288,7 +291,7 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
             </div>
           ) : (
             // ✅ استخدام PromotionCard بنفس شكل MealCardSimple
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {promotions.map((promo) => (
                 <PromotionCard
                   key={promo.id}
