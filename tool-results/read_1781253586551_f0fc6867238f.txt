@@ -1,0 +1,377 @@
+     1→---
+     2→Task ID: 1
+     3→Agent: Main Agent
+     4→Task: Set up and run the Saraya Al Arab restaurant management system
+     5→
+     6→Work Log:
+     7→- Extracted project files from uploaded zip (saraya-al-arab-v4-fixed.zip)
+     8→- Copied all source files to the working Next.js project directory
+     9→- Adapted Prisma schema from PostgreSQL to SQLite (changed provider, removed directUrl)
+    10→- Updated db.ts with withRetry helper and getModel utility
+    11→- Installed missing dependencies: bcryptjs, @types/bcryptjs, exceljs, google-auth-library
+    12→- Updated globals.css with gold-themed color scheme
+    13→- Updated next.config.ts with allowedDevOrigins
+    14→- Created seed.js with bcrypt password hashing, categories, meals, add-ons, tables, expense categories
+    15→- Pushed Prisma schema to SQLite database
+    16→- Ran database seed successfully
+    17→- Started dev server (required double-fork technique to keep process alive)
+    18→- Verified all features work via agent-browser
+    19→
+    20→Stage Summary:
+    21→- Project is running successfully on port 3000
+    22→- Database seeded with: admin user (admin/saraya2024), 6 categories, 12 meals, 4 add-ons, 5 tables, 6 expense categories
+    23→- Client menu page displays all meals with category filtering
+    24→- Staff login works with bcrypt authentication
+    25→- Admin panel loads with all tabs (Menu, Orders, Shift, Tables, Workers, Users, Employees, Reports, Settings)
+    26→- Key credentials: admin / saraya2024
+    27→
+    28→---
+    29→Task ID: 5a
+    30→Agent: Order Lifecycle Tester
+    31→Task: Test order creation and lifecycle APIs
+    32→
+    33→Work Log:
+    34→- Read worklog and all order API route files: /api/orders (GET/POST), /api/orders/[id] (GET/PUT/DELETE), /api/orders/[id]/status (PUT), /api/orders/stats (GET)
+    35→- Read Prisma schema, seed data, and rate-limit library to understand data model and business rules
+    36→- Created test webUser (test5a@saraya.com) for TAKEAWAY/DELIVERY order tests
+    37→- Tested DINE_IN order creation (staff and non-staff) — verified subtotal, service charge (12%), delivery fee (0), kitchenAccess, kitchen/barista status
+    38→- Tested TAKEAWAY order creation — verified service charge=0, delivery fee=0
+    39→- Tested DELIVERY order creation — verified service charge=0, delivery fee=25
+    40→- Tested valid lifecycle transitions: PENDING→CONFIRMED→PREPARING→READY→READY_TO_PAY→DELIVERED via /status endpoint
+    41→- Tested INVALID status transitions: PENDING→DELIVERED, backward transitions (READY_TO_PAY→PENDING) — ALL ACCEPTED, no validation
+    42→- Tested kitchen/barista status updates: RECEIVED, PREPARING, READY — work correctly but no validation on values or direction
+    43→- Tested order cancellation via DELETE endpoint (correct) and PUT endpoint (inconsistent with DELETE)
+    44→- Tested edge cases: empty items (rejected ✓), negative quantity (ACCEPTED — BUG), zero quantity (rejected by min order), negative price (rejected by min order)
+    45→- Tested addOns in orders — addOn prices stored correctly but double-counted during server-side recalculation
+    46→- Tested GET orders with filters: status, type, shiftId, kitchenAccess, customerName, pagination — all work correctly
+    47→- Tested client-side price manipulation: subtotal=25 for 299 EGP item — ACCEPTED (BUG)
+    48→- Tested fee enforcement: TAKEAWAY with service charge accepted, DELIVERY with 0 delivery fee accepted, DINE_IN with delivery fee accepted — no server-side enforcement
+    49→- Tested discount on DELIVERY order — delivery fee dropped from total (BUG)
+    50→- Tested item addition on DELIVERY order — delivery fee lost from total after recalculation (BUG)
+    51→- Tested cancelling DELIVERED order: DELETE correctly rejects, PUT allows it (BUG)
+    52→- Tested /status endpoint inconsistency: allows kitchenAccess=true for BARISTA-only orders, sets kitchenReceivedAt even for orders with no KITCHEN items
+    53→
+    54→Stage Summary:
+    55→
+    56→CRITICAL BUGS (Revenue-impacting):
+    57→1. **No server-side price validation** — Client can send any subtotal/serviceCharge/deliveryFee/total values. A 299 EGP item can be ordered for 25 EGP by manipulating the total field. The server trusts all client-sent pricing.
+    58→2. **AddOn double-counting on recalculation** — When order items are modified (add/remove/update), the server recalculates totals by adding item.price AND addOn prices separately. Since item.price already includes addOn prices (per client convention), addOns are double-counted. Example: item.price=334 (299+20+15 addOns), recalculation computes (334+35)*1=369 instead of 334.
+    59→3. **Delivery fee lost after item modifications** — When items are added/removed/updated on a DELIVERY order via PUT /api/orders/[id], the recalculation sets total = subtotal + serviceCharge, ignoring the 25 EGP delivery fee entirely.
+    60→4. **Delivery fee lost when applying discounts** — The discount calculation computes baseTotal = subtotal + serviceCharge (missing deliveryFee), then total = baseTotal - discount. A 149 EGP order with 25 EGP delivery fee and 20 EGP discount should be 154, but becomes 129.
+    61→
+    62→HIGH BUGS (Data integrity):
+    63→5. **No status transition validation** — Both PUT /api/orders/[id] and PUT /api/orders/[id]/status accept any status transition. PENDING→DELIVERED, backward transitions (READY_TO_PAY→PENDING), etc. are all allowed. The expected lifecycle (PENDING→CONFIRMED→PREPARING→READY→READY_TO_PAY→DELIVERED/CANCELLED) is not enforced.
+    64→6. **No kitchen/barista status validation** — Any value can be set for kitchenStatus/baristaStatus (even "INVALID_VALUE"). Backward transitions (READY→PENDING) are allowed.
+    65→7. **Negative quantities accepted** — Orders can be created with negative item quantities (e.g., quantity=-5) as long as the client sends a total above the 20 EGP minimum.
+    66→8. **DELIVERED order can be cancelled via PUT** — DELETE endpoint correctly rejects, but PUT /api/orders/[id] with status=CANCELLED on a DELIVERED order succeeds.
+    67→
+    68→MEDIUM BUGS (Business rule enforcement):
+    69→9. **No fee enforcement by order type** — Server doesn't enforce: DINE_IN=12% service charge, TAKEAWAY=no service charge/no delivery fee, DELIVERY=25 EGP delivery fee/no service charge. Client can send any combination.
+    70→10. **Inconsistency between /status and PUT endpoints** — /status endpoint doesn't validate kitchenAccess (allows true for BARISTA-only orders), always sets kitchenReceivedAt/baristaReceivedAt on CONFIRMED regardless of item types. PUT endpoint correctly validates kitchenAccess.
+    71→11. **Inconsistency in cancellation protection** — DELETE rejects cancel of DELIVERED orders, PUT allows it.
+    72→
+    73→WORKING CORRECTLY:
+    74→- ✅ Empty/missing items validation (rejected with 400)
+    75→- ✅ Non-existent meal ID validation (rejected with 400)
+    76→- ✅ DELIVERY requires phone + address + email (validated)
+    77→- ✅ TAKEAWAY requires phone + email (validated)
+    78→- ✅ DINE_IN non-staff requires tableCode (validated)
+    79→- ✅ HALL-only items correctly set kitchenAccess=false
+    80→- ✅ Staff orders start at CONFIRMED, non-staff at PENDING
+    81→- ✅ DINE_IN order merge for same table (adds items to existing active order)
+    82→- ✅ Minimum order value check (20 EGP)
+    83→- ✅ Meal existence and isActive check
+    84→- ✅ GET orders with all filter types working correctly
+    85→- ✅ Pagination support
+    86→- ✅ Order stats endpoint
+    87→- ✅ DELETE endpoint correctly prevents re-cancellation and DELIVERED order cancellation
+    88→- ✅ cancelledBy field set correctly on cancellation
+    89→- ✅ Rate limiting (IP and phone) for non-staff orders
+    90→
+    91→---
+    92→Task ID: fix-critical-bugs
+    93→Agent: Main Agent
+    94→Task: Fix all critical and high-priority bugs found during testing
+    95→
+    96→Work Log:
+    97→- Created /src/lib/saraya/calculate-order.ts - Server-side price calculation utility
+    98→  - calculateOrderTotals(): Fetches meal/addOn prices from DB, validates quantities, computes subtotal/serviceCharge/deliveryFee/total
+    99→  - recalculateFromItems(): Recalculates totals from existing order items (no double-counting)
+   100→  - validateDiscount(): Validates discount values (no negative, percentage 0-100%)
+   101→  - validateQuantity(): Ensures quantities are positive integers
+   102→- Updated /src/app/api/orders/route.ts (POST handler):
+   103→  - Replaced client-trusted pricing with server-calculated prices from DB
+   104→  - Added quantity validation (reject negative/zero quantities)
+   105→  - Fixed DINE_IN merge logic to use server-calculated values
+   106→  - Fixed points discount to properly deduct from total
+   107→  - Fixed deliveryFee calculation based on order type
+   108→- Updated /src/app/api/orders/[id]/route.ts (PUT handler):
+   109→  - Items to add now use DB prices instead of client-sent prices
+   110→  - AddOn prices validated against DB (fake addOn IDs/prices rejected)
+   111→  - Recalculation uses shared utility that preserves deliveryFee and discountAmount
+   112→  - Discount validation: rejects negative values, rejects >100% percentage
+   113→  - Prevents discount changes on DELIVERED/CANCELLED orders
+   114→  - Prevents cancelling DELIVERED orders via PUT
+   115→  - Fixed double DELIVERED bug (totalSpent/points only increment on first delivery)
+   116→- Updated /src/app/api/orders/[id]/status/route.ts:
+   117→  - Fixed double DELIVERED bug (guard: existing.status !== 'DELIVERED')
+   118→
+   119→Stage Summary:
+   120→- All 6 CRITICAL bugs fixed and verified with API tests
+   121→- 4 HIGH bugs fixed (double DELIVERED, cancel DELIVERED, discount on DELIVERED, >100% discount)
+   122→- Test results confirmed:
+   123→  - Fake price (25 for 45 EGP item) → Server uses DB price: subtotal=90 ✅
+   124→  - Negative quantity → Rejected with Arabic error ✅
+   125→  - Negative discount → Rejected: "قيمة الخصم لا يمكن أن تكون سالبة" ✅
+   126→  - Discount on DELIVERED order → Rejected ✅
+   127→  - Cancel DELIVERED via PUT → Rejected ✅
+   128→  - >100% percentage discount → Rejected ✅
+   129→  - Delivery fee preserved after item modifications (25 EGP) ✅
+   130→  - Discount preserved after adding items (11.5 EGP) ✅
+   131→  - AddOn prices validated from DB (sent 1,1,1 → used 20,10,15) ✅
+   132→
+   133→---
+   134→Task ID: fix-medium-bugs
+   135→Agent: Main Agent
+   136→Task: Fix all medium-priority bugs found during testing
+   137→
+   138→Work Log:
+   139→- Fixed employee deductions calculation in /api/employees/[id]:
+   140→  - Now recognizes 'ABSENCE' type (was only checking ABSENCE_FULL/ABSENCE_HALF)
+   141→  - Now uses quantity field for multi-day absences/vacations
+   142→  - Verified: salary=5500, VACATION(qty=2)+ABSENCE(qty=1) → deductions=550 ✅
+   143→- Fixed totalLoans filtering in both /api/employees/[id] and /api/employees/stats:
+   144→  - Only expenses with category "سلف العماله" count as loans
+   145→  - Added category to expenses select in stats endpoint
+   146→  - Verified: 250 (أخرى) + 500 (سلف العماله) → totalLoans=500 ✅
+   147→- Fixed discount double-counting in /api/reports/monthly:
+   148→  - Now uses ONLY order-level discounts, not shift+order (shift discounts derived from orders)
+   149→  - Removed totalDiscountsFromShifts and totalLoyaltyFromShifts
+   150→- Fixed open shift revenue = 0 in monthly report:
+   151→  - For OPEN shifts, calculates live revenue from DELIVERED orders instead of using stored 0
+   152→  - Added totalRevenueWithOpen that combines closed shift totals + open shift live revenue
+   153→- Fixed negative expense amounts in /api/expenses (POST) and /api/expenses/[id] (PUT):
+   154→  - Added validation: amount must be positive number
+   155→  - Verified: amount=-100 → "المبلغ يجب أن يكون رقم موجب" ✅
+   156→- Fixed fake shiftId returning 500 in /api/orders POST:
+   157→  - Added shift existence check before creating order
+   158→  - Verified: fake shiftId → "الشيفت المحدد غير موجود" (400) ✅
+   159→- Added status transition validation in /api/orders/[id] PUT and /api/orders/[id]/status PUT:
+   160→  - validateStatusTransition() enforces forward-only lifecycle
+   161→  - PENDING→CONFIRMED, CONFIRMED→PREPARING, PREPARING→READY, etc.
+   162→  - DELIVERED and CANCELLED are terminal states
+   163→  - Verified: CONFIRMED→DELIVERED rejected ✅, PREPARING→PENDING rejected ✅
+   164→- Added kitchen/barista status validation in /api/orders/[id] PUT:
+   165→  - validatePreparationStatus() enforces valid values and forward transitions
+   166→  - Verified: kitchenStatus="INVALID_VALUE" rejected ✅
+   167→
+   168→Stage Summary:
+   169→- All 8 MEDIUM bugs fixed and verified
+   170→- New functions added to calculate-order.ts:
+   171→  - validateStatusTransition()
+   172→  - validatePreparationStatus()
+   173→- Key files modified:
+   174→  - /src/app/api/employees/[id]/route.ts (deductions + loans fix)
+   175→  - /src/app/api/employees/stats/route.ts (deductions + loans fix + category select)
+   176→  - /src/app/api/reports/monthly/route.ts (discount double-counting + open shift revenue)
+   177→  - /src/app/api/expenses/route.ts (negative amount validation)
+   178→  - /src/app/api/expenses/[id]/route.ts (negative amount validation)
+   179→  - /src/app/api/orders/route.ts (shiftId validation)
+   180→  - /src/app/api/orders/[id]/route.ts (status + kitchen/barista validation)
+   181→  - /src/app/api/orders/[id]/status/route.ts (status transition validation)
+   182→  - /src/lib/saraya/calculate-order.ts (validateStatusTransition + validatePreparationStatus)
+   183→Task: Test employee management, expense tracking, loyalty system, and reports
+   184→
+   185→Work Log:
+   186→- Read all relevant API route source files: employees, employees/[id], employees/attendance, employees/[id]/attendance, employees/stats, expenses, expenses/[id], expenses/categories, expenses/categories/[id], reports/monthly, reports/discounts, settings, settings/loyalty, web-users, web-users/[id], web-users/check, web-users/login, orders, orders/[id], orders/[id]/status, shifts/[id]
+   187→- Read Prisma schema to understand data model and relations
+   188→- Tested Employee CRUD: GET (lists active only with _count), POST (validates name, defaults salary to 0), PUT (partial update), DELETE (soft delete isActive=false)
+   189→- Tested Attendance: POST (validates type=VACATION|ABSENCE, quantity>0), DELETE (requires attendanceId), GET (lists all with employee name)
+   190→- Discovered CRITICAL BUG in employee detail deductions calculation (/api/employees/[id])
+   191→- Tested Expense CRUD: POST (validates description+amount), PUT (partial update), DELETE (hard delete)
+   192→- Tested Expense filtering: shiftId, adminExpense, adminReport, shiftIds
+   193→- Tested Expense categories: GET, POST (validates name, rejects duplicates), PUT, DELETE
+   194→- Tested loyalty settings: GET, PUT (validates enabled/threshold/cashback)
+   195→- Created test web user and tested full loyalty flow: points earning on DELIVERED, points redemption on order creation
+   196→- Verified points earning formula: Math.floor(order.total / loyaltyThreshold)
+   197→- Verified points redemption: actualRedeem * loyaltyCashback, capped at baseTotal
+   198→- Tested edge cases: redeem more points than balance, redeem when loyalty disabled, set pointsBalance via admin
+   199→- Discovered CRITICAL BUG: double DELIVERED status causes double points/totalSpent increment
+   200→- Discovered HIGH BUG: points discount not reflected in order total during creation
+   201→- Tested Reports: monthly (returns Excel), discounts (returns JSON)
+   202→- Verified discount report calculation accuracy
+   203→- Discovered MEDIUM BUG: discount double-counting in monthly report (order + shift levels added together)
+   204→- Discovered MEDIUM BUG: open shift revenue = 0 in monthly report (missed orders)
+   205→
+   206→Stage Summary:
+   207→
+   208→CRITICAL BUGS:
+   209→1. **Employee detail deductions calculation is broken** (`/api/employees/[id]`):
+   210→   - Does NOT use the `quantity` field from attendance records (ignores multi-day vacations/absences)
+   211→   - Does NOT recognize `ABSENCE` type (only checks `ABSENCE_FULL` and `ABSENCE_HALF` which can never be created via the API)
+   212→   - Result: ABSENCE records generate 0 deductions; VACATION records only deduct 1 day regardless of quantity
+   213→   - The `/api/employees/stats` endpoint correctly handles both issues (uses quantity, recognizes ABSENCE)
+   214→   - Example: Employee with salary=5500, VACATION(qty=2) + ABSENCE(qty=1):
+   215→     - Detail endpoint: deductions=183.33 (only 1 day VACATION, ABSENCE ignored)
+   216→     - Stats endpoint: deductions=550.00 (correct: 366.67 + 183.33)
+   217→
+   218→2. **Double DELIVERED status causes infinite points/totalSpent inflation** (`/api/orders/[id]` PUT and `/api/orders/[id]/status` PUT):
+   219→   - When an already DELIVERED order is set to DELIVERED again, `totalSpent` is incremented by `order.total` AGAIN and `pointsBalance` is incremented AGAIN
+   220→   - No check for `existing.status !== 'DELIVERED'` before applying increments
+   221→   - This allows unlimited exploitation: repeatedly setting the same order to DELIVERED generates infinite points and inflates totalSpent
+   222→   - Example: Order with total=500, setting to DELIVERED 3 times: totalSpent += 1500, pointsBalance += 15
+   223→
+   224→3. **totalLoans includes ALL employee expenses, not just سلف (advances)** (`/api/employees/[id]` and `/api/employees/stats`):
+   225→   - `totalLoans = emp.expenses.reduce((sum, e) => sum + e.amount, 0)` sums ALL expenses
+   226→   - Non-سلف expenses (e.g., cleaning supplies "مصاريف تنظيف" at 250) incorrectly reduce remainingSalary
+   227→   - Only expenses with category "سلف العماله" should count as loans against salary
+   228→   - The stats endpoint also lacks `category` in its expense select, making it impossible to filter
+   229→
+   230→HIGH BUGS:
+   231→4. **Negative expense amounts allowed** (`/api/expenses` POST and PUT):
+   232→   - No validation that `amount` must be positive (or at least non-negative)
+   233→   - Both creation and update accept negative amounts
+   234→   - A -100 expense would artificially inflate net revenue in reports
+   235→   - Also: zero amount rejected by `!amount` check (0 is falsy), which is arguably correct but the error message says "Description and amount are required" which is misleading for zero
+   236→
+   237→5. **Points discount not reflected in order total during creation** (`/api/orders` POST):
+   238→   - When points are redeemed, `discountAmount` is stored but `order.total` is NOT reduced by the discount
+   239→   - `total` is set from the request body (`parseFloat(total) || 0`), not adjusted for pointsDiscount
+   240→   - This causes: (a) totalSpent incremented by full amount instead of discounted amount, (b) points earned on full amount instead of discounted amount, (c) revenue reports inflated by discount amount
+   241→   - Inconsistency: manual discounts via PUT correctly reduce total (`updateData.total = baseTotal - discountAmount`), but points discounts during creation do not
+   242→   - Example: Order with total=100, pointsDiscount=10: stored total=100, discountAmount=10. Should be total=90.
+   243→
+   244→MEDIUM BUGS:
+   245→6. **Discount double-counting in monthly report** (`/api/reports/monthly`):
+   246→   - `totalDiscounts = totalDiscountsFromOrders + totalDiscountsFromShifts`
+   247→   - `totalDiscountsFromOrders` = sum of order.discountAmount for orders with discounts in date range
+   248→   - `totalDiscountsFromShifts` = sum of shift.totalDiscounts for shifts in date range
+   249→   - Since shift.totalDiscounts is already derived from order discounts, adding both results in double-counting
+   250→   - Same issue with `totalLoyaltyDiscounts`
+   251→
+   252→7. **Open shift revenue = 0 in monthly report** (`/api/reports/monthly`):
+   253→   - Monthly report uses `shift.totalRevenue` which is 0 for OPEN shifts (only set when shift is closed)
+   254→   - Orders delivered during an open shift are not counted in the monthly report revenue
+   255→   - The shift detail endpoint correctly calculates live revenue for open shifts, but the monthly report doesn't
+   256→   - Workaround: close shifts before generating reports (but this is not always practical)
+   257→
+   258→8. **Percentage discount values not validated** (`/api/orders/[id]` PUT):
+   259→   - Values like 200% are accepted for PERCENTAGE discounts
+   260→   - The actual discount is capped at baseTotal via Math.min(), but the stored discountValue=200 is misleading
+   261→   - Should validate that percentage discounts are between 0-100
+   262→
+   263→LOW BUGS:
+   264→9. **Loyalty settings silently convert invalid input to 0** (`/api/settings/loyalty` PUT):
+   265→   - `parseFloat("abc") || 0` returns 0 instead of rejecting the invalid input
+   266→   - Should validate that loyaltyThreshold and loyaltyCashback are positive numbers
+   267→
+   268→10. **Employee soft-delete doesn't cascade properly** (`/api/employees/[id]` DELETE):
+   269→    - Deleted employee's expenses and attendance records still reference the employee
+   270→    - The attendance list still shows the deleted employee's name
+   271→    - This is technically correct for data integrity but could cause confusion in reports
+   272→
+   273→WORKING CORRECTLY:
+   274→- ✅ Employee CRUD: name validation, default salary, partial updates, soft delete
+   275→- ✅ Attendance: type validation (VACATION|ABSENCE only), quantity validation (positive), employee existence check
+   276→- ✅ Attendance deletion: requires attendanceId param
+   277→- ✅ Expense CRUD: description+amount required, employeeId linking, shiftId linking
+   278→- ✅ Expense categories: name uniqueness, CRUD operations
+   279→- ✅ Expense filtering: by shiftId, adminExpense, adminReport, shiftIds
+   280→- ✅ Loyalty settings: CRUD, disabled loyalty correctly prevents redemption
+   281→- ✅ Points earning: correct formula (Math.floor(total/threshold)), only on DELIVERED, only when enabled
+   282→- ✅ Points redemption: capped at pointsBalance, discount capped at baseTotal, correct decrement
+   283→- ✅ Web user management: CRUD, blocking, points balance admin override
+   284→- ✅ Web user check: correctly returns blocked status
+   285→- ✅ Discount report: accurate totalDiscounts calculation, date range filtering
+   286→- ✅ Monthly report: Excel generation, date parsing (local/ISO), expense categorization
+   287→
+   288→---
+   289→Task ID: 5b-5c
+   290→Agent: Shift & Discount Tester
+   291→Task: Test shift management and discount logic
+   292→
+   293→Work Log:
+   294→- Read all relevant API route files: /api/shifts (GET/POST), /api/shifts/[id] (GET/PUT), /api/orders (POST), /api/orders/[id] (GET/PUT/DELETE), /api/expenses (GET/POST), /api/reports/discounts (GET)
+   295→- Read Prisma schema for Shift, Order, Expense models
+   296→- Read cart-store.ts, types.ts, constants.ts, helpers.ts for client-side logic
+   297→- Tested shift opening via POST /api/shifts — works correctly, creates OPEN shift with defaults
+   298→- Tested opening a second shift when one is open — auto-closes first shift then opens new one (no error returned)
+   299→- Tested closing shift via PUT /api/shifts/[id] — calculates totalRevenue, totalExpenses, netRevenue, totalDiscounts correctly
+   300→- Verified totalRevenue = sum of DELIVERED order totals (post-discount)
+   301→- Verified totalDiscounts = sum of all discountAmount across DELIVERED orders
+   302→- Verified netRevenue = totalRevenue - totalExpenses
+   303→- Tested closing shift with no orders — all values correctly 0
+   304→- Tested closing already-closed shift — returns 400 error (correct)
+   305→- Tested closing non-existent shift — returns 404 (correct)
+   306→- Tested PATCH method on shifts — returns 405 (only PUT supported)
+   307→- Tested shift details GET /api/shifts/[id] — returns live recalculated totals for OPEN shifts, stored values for CLOSED
+   308→- Tested shift history GET /api/shifts — returns all shifts ordered by createdAt desc
+   309→- Tested shift by date GET /api/shifts?date=YYYY-MM-DD — works correctly
+   310→- Tested current shift GET /api/shifts?current=true — returns null when no open shift
+   311→- Tested FIXED discount — correctly calculates discountAmount = min(discountValue, baseTotal)
+   312→- Tested PERCENTAGE discount — correctly calculates discountAmount = min(baseTotal * discountValue / 100, baseTotal)
+   313→- Tested discount larger than total (FIXED 100 on 44.8 order) — correctly capped at 44.8, total = 0
+   314→- Tested discount larger than total (PERCENTAGE 200%) — correctly capped at baseTotal, total = 0
+   315→- Tested 100% PERCENTAGE discount — correctly makes total = 0
+   316→- Tested 0 FIXED and 0% PERCENTAGE discounts — total unchanged
+   317→- Tested discount removal by setting discountType="" — correctly resets discount, restores baseTotal
+   318→- Tested discountAppliedBy field — correctly stored and returned
+   319→- Tested discountReason field — correctly stored and returned
+   320→- Tested negative FIXED discount (-50) — BUG: increases total by 50 instead of being rejected
+   321→- Tested negative PERCENTAGE discount (-25%) — BUG: increases total by 28 instead of being rejected
+   322→- Tested applying discount to DELIVERED order — BUG: allowed, no status check
+   323→- Tested adding items to order with existing discount — BUG: discount lost from total (subtotal+serviceCharge recalc doesn't subtract discountAmount)
+   324→- Tested removing items from order with existing discount — BUG: same discount loss issue
+   325→- Tested creating order with no open shift — correctly returns 400 error
+   326→- Tested order creation with fake shiftId — returns 500 (should be 400 with validation message)
+   327→- Tested export-and-clear endpoint (read code) — same closing logic as PUT endpoint, consistent
+   328→
+   329→Stage Summary:
+   330→
+   331→CRITICAL BUGS (Revenue-impacting):
+   332→1. **Negative discount increases order total** — Applying a FIXED discount with value=-50 or PERCENTAGE with value=-25% results in a NEGATIVE discountAmount, which INCREASES the total instead of reducing it. A 67.2 EGP order with -50 FIXED discount becomes 117.2 EGP. No server-side validation that discountValue >= 0.
+   333→   - File: /src/app/api/orders/[id]/route.ts, lines 246-249
+   334→   - Fix: Add validation `if (body.discountValue < 0) return 400 error` or clamp discountAmount to max(0, calculated)
+   335→
+   336→2. **Discount lost from total when items are modified** — When items are added, removed, or updated on an order that has a discount applied, the total is recalculated as `subtotal + serviceCharge` WITHOUT subtracting the existing discountAmount. The discountAmount field is preserved in the DB but the total no longer reflects it. Example: Order with subtotal=60, serviceCharge=7.2, discountAmount=6.72 → total=60.48. After adding a 20 EGP item: subtotal=80, serviceCharge=9.6, discountAmount=6.72 → total=89.6 (should be 82.88).
+   337→   - File: /src/app/api/orders/[id]/route.ts, lines 222-237 (itemsWereModified block)
+   338→   - Fix: After recalculating subtotal and serviceCharge, subtract existing discountAmount: `updateData.total = finalSubtotal + finalServiceCharge - (existing.discountAmount || 0)`
+   339→   - NOTE: This is the SAME class of bug as the delivery-fee-lost bug found by 5a, since both stem from the recalculation not considering all components of the total.
+   340→
+   341→HIGH BUGS (Data integrity):
+   342→3. **Discount can be applied to DELIVERED orders** — No status check in the discount logic. A DELIVERED (paid) order can have its discount modified retroactively, changing the total after payment. This could allow fraud or data corruption.
+   343→   - File: /src/app/api/orders/[id]/route.ts, lines 241-257
+   344→   - Fix: Add check `if (existing.status === 'DELIVERED' || existing.status === 'CANCELLED') return error`
+   345→
+   346→4. **Order creation with fake shiftId returns 500** — When providing a non-existent shiftId in POST /api/orders, the foreign key constraint violation causes a 500 error instead of a meaningful 400 validation error.
+   347→   - File: /src/app/api/orders/route.ts, line 507 (shiftId: shiftId || openShift.id)
+   348→
+   349→DESIGN CONCERNS (Not bugs, but worth noting):
+   350→5. **Opening a shift auto-closes any open shift** — POST /api/shifts closes all open shifts in a transaction before creating a new one. There's no confirmation or warning. A misclick could close a shift prematurely. The shift is closed with calculated totals but no endedBy or notes.
+   351→6. **PATCH method not supported on /api/shifts/[id]** — Only PUT is implemented. The task description mentioned PATCH but the route only exports PUT and GET handlers. Not a bug but may confuse API consumers.
+   352→7. **totalRevenue uses post-discount totals** — Shift's totalRevenue is the sum of order.total (after discount), not the pre-discount subtotal. This is a valid design choice (reflects actual money received), but the field name "totalRevenue" could be misleading since gross revenue would typically include discounts. The totalDiscounts field compensates by tracking total discounts separately.
+   353→8. **Discount capping uses Math.min but doesn't validate discountValue range** — While over-large discounts are correctly capped at baseTotal, the discountValue field stores the original (uncapped) value. E.g., discountValue=999999999 but discountAmount=44.8. This is fine for auditing but could be confusing.
+   354→
+   355→WORKING CORRECTLY:
+   356→- ✅ Shift opening creates properly initialized OPEN shift
+   357→- ✅ Shift closing correctly sums DELIVERED order totals for totalRevenue
+   358→- ✅ Shift closing correctly sums expenses for totalExpenses
+   359→- ✅ netRevenue = totalRevenue - totalExpenses (verified)
+   360→- ✅ totalDiscounts = sum of discountAmount across DELIVERED orders (verified)
+   361→- ✅ totalLoyaltyDiscounts tracks POINTS-type discounts separately
+   362→- ✅ Closing already-closed shift returns 400 error
+   363→- ✅ Closing non-existent shift returns 404 error
+   364→- ✅ Empty shift (no orders) closes with all zeros
+   365→- ✅ Closing blocked while unpaid orders exist (returns count of unpaid orders)
+   366→- ✅ Live shift details (GET /api/shifts/[id]) recalculates totals for OPEN shifts
+   367→- ✅ FIXED discount correctly caps at baseTotal when discountValue > baseTotal
+   368→- ✅ PERCENTAGE discount correctly caps at baseTotal when percentage > 100%
+   369→- ✅ 100% discount makes total = 0
+   370→- ✅ 0 FIXED / 0% PERCENTAGE discount leaves total unchanged
+   371→- ✅ Discount removal (discountType="") correctly resets and restores baseTotal
+   372→- ✅ discountAppliedBy and discountReason stored correctly
+   373→- ✅ Discount replacement works (applying new discount replaces old one)
+   374→- ✅ Order creation blocked when no open shift exists
+   375→- ✅ Shift date query and current shift query work correctly
+   376→- ✅ Shift history returns all shifts ordered by date
+   377→

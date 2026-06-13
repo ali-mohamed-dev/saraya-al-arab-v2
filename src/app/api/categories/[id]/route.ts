@@ -1,11 +1,15 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 // PUT /api/categories/[id] - Update a category
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     // في Next.js 16 يجب عمل await للـ params
     const { id } = await params
@@ -45,9 +49,12 @@ export async function PUT(
 
 // DELETE /api/categories/[id] - Delete a category
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     // Check if any meals use this category

@@ -22,12 +22,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'الحساب غير نشط' }, { status: 403 })
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       id: admin.id,
       username: admin.username,
       role: admin.role,
       authenticated: true,
     })
+    response.cookies.set('saraya-staff-auth', 'true', {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'strict',
+      path: '/',
+    })
+    response.cookies.set('saraya-staff-role', admin.role, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'strict',
+      path: '/',
+    })
+    return response
   } catch (error) {
     console.error('Error during login:', error)
     return NextResponse.json({ error: 'Authentication failed' }, { status: 500 })

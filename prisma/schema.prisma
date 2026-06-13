@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Admin {
@@ -34,7 +33,7 @@ model Meal {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   addons          AddOn[]
-  promotionMeals  PromotionMeal[]  
+  promotionMeals  PromotionMeal[]
 
 }
 
@@ -61,16 +60,16 @@ model Promotion {
   titleAr        String        @default("")
   description    String        @default("")
   descriptionAr  String        @default("")
-  price          Float         @default(0)        // السعر بعد الخصم
-  oldPrice       Float         @default(0)        // السعر الأصلي قبل الخصم
-  discount       Int           @default(0)        // نسبة الخصم المئوية (اختياري)
+  price          Float         @default(0)
+  oldPrice       Float         @default(0)
+  discount       Int           @default(0)
   buttonText     String        @default("")
   buttonTextAr   String        @default("")
   buttonLink     String        @default("")
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
-  mealItems      PromotionMeal[] // الوجبات المرتبطة بالعرض
+  mealItems      PromotionMeal[]
 
 }
 
@@ -97,6 +96,8 @@ model Shift {
   totalRevenue  Float     @default(0)
   totalExpenses Float     @default(0)
   netRevenue    Float     @default(0)
+  totalDiscounts Float    @default(0)
+  totalLoyaltyDiscounts Float @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -111,6 +112,7 @@ model Order {
   status          String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, READY_TO_PAY, DELIVERED, CANCELLED
   customerName    String      @default("")
   customerPhone   String      @default("")
+  customerEmail   String      @default("")
   deliveryAddress String      @default("")
   tableNumber     String      @default("")
   pickupTime      String      @default("")
@@ -118,22 +120,33 @@ model Order {
   serviceCharge   Float       @default(0)
   deliveryFee     Float       @default(0)
   total           Float       @default(0)
+  discountType    String      @default("")
+  discountValue   Float       @default(0)
+  discountAmount  Float       @default(0)
+  discountReason  String      @default("")
+  discountAppliedBy String    @default("")
   kitchenAccess   Boolean     @default(false)
-  kitchenStatus   String      @default("PENDING") // PENDING, CONFIRMED, PREPARING, READY, CANCELLED
+  baristaAccess   Boolean     @default(false)
+  kitchenStatus   String      @default("PENDING")
   baristaStatus   String      @default("PENDING")
+  kitchenReceivedAt DateTime?
+  baristaReceivedAt DateTime?
   notes           String      @default("")
   cancelledBy     String?
   shiftId         String?
+  webUserId       String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   shift           Shift?      @relation(fields: [shiftId], references: [id])
   items           OrderItem[]
+  webUser         WebUser?    @relation(fields: [webUserId], references: [id])
 
   @@unique([shiftId, orderNumber])
   @@index([status])
   @@index([shiftId])
   @@index([createdAt])
 }
+
 model OrderItem {
   id                String   @id @default(cuid())
   orderId           String
@@ -147,8 +160,9 @@ model OrderItem {
   addOns            String   @default("[]")
   category          String   @default("")
   isPromotion       Boolean  @default(false)
+  notes             String   @default("")
   lastAddedQuantity Int      @default(0)
-  addedQuantity     Int      @default(0)     // <-- السطر ده اللي ناقصك
+  addedQuantity     Int      @default(0)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -164,30 +178,129 @@ model Expense {
   amount      Float
   shiftId     String?
   createdBy   String   @default("")
+  employeeId  String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   shift       Shift?   @relation(fields: [shiftId], references: [id])
+  employee    Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([shiftId])
+  @@index([employeeId])
+}
+
+model Employee {
+  id             String   @id @default(cuid())
+  name           String
+  jobTitle       String
+  specialization String   @default("")
+  salary         Float    @default(0)
+  dailyHours     Float    @default(8)  // agreed working hours per day
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  expenses    Expense[]
+  attendances Attendance[]
+  dailyLogs   DailyLog[]
+
+  @@index([name])
+  @@index([jobTitle])
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  employeeId String
+  date       DateTime?
+  type       String   // VACATION, ABSENCE
+  quantity   Float    @default(1)
+  notes      String   @default("")
+  createdBy  String   @default("")
+  createdAt  DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+}
+
+model DailyLog {
+  id              String   @id @default(cuid())
+  employeeId      String
+  date            DateTime @default(now())
+  clockIn         DateTime?
+  clockOut        DateTime?
+  status          String   @default("PRESENT") // PRESENT, LATE, ABSENT
+  overtimeMinutes Int      @default(0)
+  notes           String   @default("")
+  recordedBy      String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
 }
 
 model RestaurantTable {
   id         String   @id @default(cuid())
-  number     Int      @unique
-  name       String   @default("") // اسم اختياري زي "طاولة 5 - VIP"
-  secretCode String   @unique // كود سري 6 خانات لكل طاولة
-  seats      Int      @default(4) // عدد الكراسي
-  area       String   @default("صالة رئيسية") // المنطقة
+  number     Int
+  name       String   @default("")
+  secretCode String   @unique
+  seats      Int      @default(4)
+  area       String   @default("صالة رئيسية")
   isActive   Boolean  @default(true)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@unique([number, area])
 }
 
 model StoreSettings {
   id          String   @id @default("default")
-  takingOrders Boolean @default(true)  // المطعم يستقبل طلبات أم لا
+  takingOrders Boolean @default(true)
   message     String   @default("المطعم مغلق حالياً، لا يمكن استقبال الطلبات")
+  openTime    String   @default("09:00")
+  closeTime   String   @default("23:00")
+  closeWarningMinutes Int  @default(10)
+  autoCloseMinutes     Int  @default(10)
+  loyaltyEnabled  Boolean @default(false)
+  loyaltyThreshold Float   @default(1000)
+  loyaltyCashback  Float   @default(50)
+  areas       String[] @default([])
   updatedAt   DateTime @updatedAt
+}
+
+model WebUser {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String    @default("")
+  phone     String    @default("")
+  picture   String    @default("")
+  isBlocked Boolean   @default(false)
+  totalSpent Float    @default(0)
+  pointsBalance Int   @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  orders    Order[]
+  addresses Address[]
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String   @default("المنزل")
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      WebUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ExpenseCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
 }
 
 model Category {
@@ -198,4 +311,20 @@ model Category {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MonthlyHandover {
+  id          String   @id @default(cuid())
+  month       Int      // 1-12
+  year        Int
+  totalRevenue Float   @default(0)
+  totalExpenses Float  @default(0)
+  totalDiscounts Float @default(0)
+  netRevenue   Float   @default(0)
+  handedOverBy String
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@unique([month, year])
+  @@index([year, month])
 }

@@ -1,11 +1,15 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 // PUT /api/shifts/[id] - close a shift with summary
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!requireRole(request, ['ADMIN', 'CASHIER'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     const body = await request.json()
@@ -34,9 +38,16 @@ export async function PUT(
     // Calculate revenue from DELIVERED orders in this shift
     const orders = await db.order.findMany({
       where: { shiftId: id, status: 'DELIVERED' },
-      select: { total: true },
+      select: { total: true, discountAmount: true, discountType: true },
     })
     const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0)
+
+    // ── Discounts (FIX: previously only calculated in export-and-clear,
+    // leaving these fields at 0 if a shift was closed via this endpoint) ──
+    const totalDiscounts = orders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+    const totalLoyaltyDiscounts = orders
+      .filter(o => o.discountType === 'POINTS')
+      .reduce((sum, o) => sum + (o.discountAmount || 0), 0)
 
     // Calculate total expenses for this shift
     const expenses = await db.expense.findMany({
@@ -55,12 +66,14 @@ export async function PUT(
         totalRevenue,
         totalExpenses,
         netRevenue,
+        totalDiscounts,
+        totalLoyaltyDiscounts,
         notes: notes || null,
       },
     })
 
-    // حذف جميع الأوردرات الخاصة بهذه الوردية نهائياً عشان الترقيم يبدأ من 1 في الوردية الجديدة
-    await db.order.deleteMany({ where: { shiftId: id } })
+    // لا نمسح الأوردرات بعد إغلاق الشيفت — البيانات التاريخية مهمة للتقارير
+    // رقم الطلب (orderNumber) بيبدأ من 1 لكل شيفت جديد عشان الـ unique constraint على [shiftId, orderNumber]
 
     return NextResponse.json(updatedShift)
   } catch (error) {
@@ -93,7 +106,23 @@ export async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({ shift, orders, expenses })
+    // حساب الإحصائيات الحية للشيفت المفتوح
+    const deliveredOrders = orders.filter(o => o.status === 'DELIVERED')
+    const liveTotalRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0)
+    const liveTotalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+    const liveNetRevenue = liveTotalRevenue - liveTotalExpenses
+    const liveTotalDiscounts = deliveredOrders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+
+    // لو الشيفت مفتوح، نرجع الأرقام الحية؛ لو مقفول، نرجع الأرقام المحفوظة
+    const shiftData = shift.status === 'OPEN' ? {
+      ...shift,
+      totalRevenue: liveTotalRevenue,
+      totalExpenses: liveTotalExpenses,
+      netRevenue: liveNetRevenue,
+      totalDiscounts: liveTotalDiscounts,
+    } : shift
+
+    return NextResponse.json({ shift: shiftData, orders, expenses })
   } catch (error) {
     console.error('Error fetching shift:', error)
     return NextResponse.json({ error: 'Failed to fetch shift' }, { status: 500 })

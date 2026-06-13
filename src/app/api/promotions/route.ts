@@ -1,17 +1,35 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 // GET /api/promotions - Fetch promotions (with related meals)
-// Supports ?active=true to filter only active promotions
+// Supports ?active=true to filter only active promotions, ?page=1&limit=50 for pagination
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const activeOnly = searchParams.get('active') === 'true'
+    const page = searchParams.get('page')
+    const limit = searchParams.get('limit')
+
+    const where = activeOnly ? { isActive: true } : undefined
+    const select = { id: true, bannerImageUrl: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, oldPrice: true, discount: true, isActive: true, buttonText: true, buttonTextAr: true, buttonLink: true, createdAt: true, mealItems: { select: { id: true, mealId: true, meal: { select: { id: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, prepTime: true, category: true, categoryAr: true, preparationArea: true, imageUrl: true, isActive: true } } } } }
+
+    if (page && limit) {
+      const pageNum = Math.max(1, parseInt(page) || 1)
+      const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 50))
+      const skip = (pageNum - 1) * limitNum
+      const [promotions, total] = await Promise.all([
+        db.promotion.findMany({ where, orderBy: { createdAt: 'desc' }, select, skip, take: limitNum }),
+        db.promotion.count({ where }),
+      ])
+      return NextResponse.json({ data: promotions, total, page: pageNum, totalPages: Math.ceil(total / limitNum) }, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
+    }
 
     const promotions = await db.promotion.findMany({
-      where: activeOnly ? { isActive: true } : undefined,
+      where,
       orderBy: { createdAt: 'desc' },
-      select: { id: true, bannerImageUrl: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, oldPrice: true, discount: true, isActive: true, buttonText: true, buttonTextAr: true, buttonLink: true, createdAt: true, mealItems: { select: { id: true, mealId: true, meal: { select: { id: true, title: true, titleAr: true, description: true, descriptionAr: true, price: true, prepTime: true, category: true, categoryAr: true, preparationArea: true, imageUrl: true, isActive: true } } } } },
+      select,
+      take: 100,
     })
     return NextResponse.json(promotions, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
   } catch (error) {
@@ -22,6 +40,9 @@ export async function GET(request: NextRequest) {
 
 // POST /api/promotions - Create a new promotion
 export async function POST(request: NextRequest) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const body = await request.json()
     const {

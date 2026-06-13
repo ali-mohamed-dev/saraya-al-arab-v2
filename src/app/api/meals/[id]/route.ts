@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 // GET /api/meals/[id] - Fetch a single meal
 export async function GET(
@@ -27,6 +28,9 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     const body = await request.json()
@@ -43,7 +47,7 @@ export async function PUT(
         ...(titleAr         !== undefined && { titleAr }),
         ...(description     !== undefined && { description }),
         ...(descriptionAr   !== undefined && { descriptionAr }),
-        ...(price           !== undefined && { price: parseFloat(price) }),
+        ...(price !== undefined && price !== '' && !isNaN(parseFloat(price)) && { price: parseFloat(price) }),
         ...(prepTime        !== undefined && { prepTime }),
         ...(category        !== undefined && { category }),
         ...(categoryAr      !== undefined && { categoryAr }),
@@ -62,9 +66,12 @@ export async function PUT(
 
 // DELETE /api/meals/[id] - Delete a meal (was missing entirely)
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     const meal = await db.meal.findUnique({ where: { id } })
@@ -73,6 +80,7 @@ export async function DELETE(
     }
     await db.promotionMeal.deleteMany({ where: { mealId: id } })
     await db.addOn.deleteMany({ where: { mealId: id } })
+    await db.orderItem.deleteMany({ where: { mealId: id } })
     await db.meal.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {

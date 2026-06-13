@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function GET() {
   try {
     const tables = await db.restaurantTable.findMany({
-      orderBy: { number: 'asc' },
+      orderBy: [{ area: 'asc' }, { number: 'asc' }],
     })
     return NextResponse.json(tables)
   } catch (error) {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(table, { status: 201 })
   } catch (error: any) {
     if (error.code === 'P2002') {
-      return NextResponse.json({ error: 'رقم الطاولة موجود بالفعل' }, { status: 409 })
+      return NextResponse.json({ error: 'رقم الطاولة موجود بالفعل في هذه المنطقة' }, { status: 409 })
     }
     console.error('Error creating table:', error)
     return NextResponse.json({ error: 'Failed to create table' }, { status: 500 })

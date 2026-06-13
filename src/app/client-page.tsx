@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { ClientMenu } from '@/components/Top/client/client-menu'
 import { AdminLogin } from '@/components/Top/admin-login'
+import { UserProfile } from '@/components/Top/user-profile/user-profile'
 import { ErrorBoundary } from '@/components/Top/shared/error-boundary'
 import type { Meal, Promotion } from '@/lib/saraya/types'
 
@@ -13,7 +14,7 @@ const CashierPanel = dynamic(() => import('@/components/Top/cashier/cashier-pane
 const KitchenPanel = dynamic(() => import('@/components/Top/kitchen/kitchen-panel').then(m => ({ default: m.KitchenPanel })), { ssr: false })
 const BaristaPanel = dynamic(() => import('@/components/Top/barista/barista-panel').then(m => ({ default: m.BaristaPanel })), { ssr: false })
 
-type View = 'menu' | 'staff-login' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel' | 'barista-panel' | 'loading'
+type View = 'menu' | 'staff-login' | 'user-login' | 'user-profile' | 'admin-panel' | 'waiter-panel' | 'cashier-panel' | 'kitchen-panel' | 'barista-panel' | 'loading'
 
 interface ClientPageProps {
   initialMeals: Meal[]
@@ -37,10 +38,13 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
   const [view, setView] = useState<View>('loading')
 
   useEffect(() => {
-    const authStatus = sessionStorage.getItem('saraya-admin-auth')
+    const webAuth = sessionStorage.getItem('web-user-auth')
+    const staffAuth = sessionStorage.getItem('saraya-admin-auth')
     const savedRole = sessionStorage.getItem('saraya-staff-role')
-    if (authStatus === 'true' && savedRole) {
+    if (staffAuth === 'true' && savedRole) {
       setView(getViewForRole(savedRole))
+    } else if (webAuth === 'true') {
+      setView('menu')
     } else {
       setView('menu')
     }
@@ -56,6 +60,15 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
     }
   }
 
+  const handleUserClick = () => {
+    const webAuth = sessionStorage.getItem('web-user-auth')
+    if (webAuth === 'true') {
+      setView('user-profile')
+    } else {
+      setView('user-login')
+    }
+  }
+
   const handleLoginSuccess = (role: string, username: string) => {
     sessionStorage.setItem('saraya-admin-auth', 'true')
     sessionStorage.setItem('saraya-staff-role', role)
@@ -63,10 +76,20 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
     setView(getViewForRole(role))
   }
 
+  const handleUserLoginSuccess = () => {
+    setView('menu')
+  }
+
   const handleLogout = () => {
     sessionStorage.removeItem('saraya-admin-auth')
     sessionStorage.removeItem('saraya-staff-role')
     sessionStorage.removeItem('saraya-staff-username')
+    setView('menu')
+  }
+
+  const handleUserLogout = () => {
+    sessionStorage.removeItem('web-user-auth')
+    sessionStorage.removeItem('web-user-data')
     setView('menu')
   }
 
@@ -84,6 +107,7 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
         <ErrorBoundary>
           <ClientMenu
             onAdminClick={handleAdminClick}
+            onUserClick={handleUserClick}
             initialMeals={initialMeals}
             initialPromotions={initialPromotions}
             initialTakingOrders={initialTakingOrders}
@@ -92,7 +116,10 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
         </ErrorBoundary>
       )
     case 'staff-login':
-      return <ErrorBoundary><AdminLogin onLogin={handleLoginSuccess} onBack={() => setView('menu')} /></ErrorBoundary>
+    case 'user-login':
+      return <ErrorBoundary><AdminLogin onLogin={handleLoginSuccess} onUserLogin={handleUserLoginSuccess} onBack={() => setView('menu')} /></ErrorBoundary>
+    case 'user-profile':
+      return <ErrorBoundary><UserProfile onLogout={handleUserLogout} onBack={() => setView('menu')} /></ErrorBoundary>
     case 'admin-panel':
       return <ErrorBoundary fallbackTitle="حدث خطأ في لوحة الإدارة"><AdminPanel onLogout={handleLogout} /></ErrorBoundary>
     case 'waiter-panel':
@@ -108,6 +135,7 @@ export function ClientPage({ initialMeals, initialPromotions, initialTakingOrder
         <ErrorBoundary>
           <ClientMenu
             onAdminClick={handleAdminClick}
+            onUserClick={handleUserClick}
             initialMeals={initialMeals}
             initialPromotions={initialPromotions}
             initialTakingOrders={initialTakingOrders}

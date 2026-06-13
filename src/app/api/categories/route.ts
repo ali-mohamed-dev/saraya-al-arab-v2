@@ -1,11 +1,13 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
-// GET /api/categories - Fetch all active categories
-export async function GET() {
+// GET /api/categories - Fetch categories (active only by default, all if ?all=true)
+export async function GET(request: NextRequest) {
   try {
+    const showAll = request.nextUrl.searchParams.get('all') === 'true'
     const categories = await db.category.findMany({
-      where: { isActive: true },
+      where: showAll ? {} : { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
     })
     return NextResponse.json(categories)
@@ -17,6 +19,9 @@ export async function GET() {
 
 // POST /api/categories - Create a new category
 export async function POST(request: NextRequest) {
+  if (!requireRole(request, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const body = await request.json()
     const { name, icon, sortOrder } = body

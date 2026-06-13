@@ -56,11 +56,19 @@ export function transformOrder(raw: Record<string, unknown>): Order {
     tableNumber: (raw.tableNumber as string) || undefined,
     subtotal: Number(raw.subtotal ?? 0),
     serviceCharge: Number(raw.serviceCharge ?? 0),
+    deliveryFee: Number(raw.deliveryFee ?? 0) || undefined,
     total: Number(raw.total ?? 0),
+    discountType: (raw.discountType as string) || undefined,
+    discountValue: Number(raw.discountValue ?? 0) || undefined,
+    discountAmount: Number(raw.discountAmount ?? 0) || undefined,
+    discountReason: (raw.discountReason as string) || undefined,
+    discountAppliedBy: (raw.discountAppliedBy as string) || undefined,
     kitchenAccess: (raw.kitchenAccess as boolean) ?? false,
     baristaAccess: (raw.baristaAccess as boolean) ?? false,
     kitchenStatus: (raw.kitchenStatus as string) as Order['kitchenStatus'] || 'PENDING',
     baristaStatus: (raw.baristaStatus as string) as Order['baristaStatus'] || 'PENDING',
+    kitchenReceivedAt: (raw.kitchenReceivedAt as string) || undefined,
+    baristaReceivedAt: (raw.baristaReceivedAt as string) || undefined,
     notes: (raw.notes as string) || undefined,
     cancelledBy: (raw.cancelledBy as string) || undefined,
     shiftId: (raw.shiftId as string) || undefined,
@@ -72,7 +80,8 @@ export function transformOrder(raw: Record<string, unknown>): Order {
         parsedAddOns = typeof item.addOns === 'string'
           ? JSON.parse(item.addOns || '[]')
           : (item.addOns as { title: string; titleAr: string; price: number }[] | undefined)
-      } catch {
+      } catch (e) {
+        console.warn('helpers: failed to parse addOns', e)
         parsedAddOns = undefined
       }
       return {
@@ -86,6 +95,8 @@ export function transformOrder(raw: Record<string, unknown>): Order {
         imageUrl: (item.imageUrl as string) || undefined,
         addOns: parsedAddOns,
         addedQuantity: (item.addedQuantity as number) ?? 0,
+        category: (item.category as string) || undefined,
+        notes: (item.notes as string) || undefined,
       }
     }),
   }
@@ -121,7 +132,7 @@ export function unlockAudio() {
     if (audioContextSingleton.state === 'suspended') {
       audioContextSingleton.resume()
     }
-  } catch { /* ignore */ }
+  } catch (err) { console.warn('helpers: unlockAudio failed', err) }
 }
 
 export function playNotificationSound() {
@@ -148,7 +159,7 @@ export function playNotificationSound() {
       oscillator.disconnect()
       gainNode.disconnect()
     }
-  } catch { /* ignore */ }
+  } catch (err) { console.warn('helpers: playNotificationSound failed', err) }
 }
 
 // ── Number validation ────────────────────────────────────────────────────

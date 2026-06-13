@@ -1,22 +1,23 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bell, X, ShoppingBag, Receipt, Loader2, TrendingDown, DollarSign } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import type { Order } from '@/lib/saraya/types'
-import { ORDER_STATUS_MAP, ORDER_TYPE_MAP } from '@/lib/saraya/constants'
-import { transformOrder, getRelativeTime, playNotificationSound } from '@/lib/saraya/helpers'
+import type { Order, OrderType, CartItemType, Meal } from '@/lib/saraya/types'
+import { ORDER_STATUS_MAP, ORDER_TYPE_MAP, SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
+import { transformOrder, getRelativeTime, playNotificationSound, isValidEgyptianPhone } from '@/lib/saraya/helpers'
 import { useRelativeTimers } from '@/lib/saraya/hooks'
+import { NewOrderDialog } from '@/components/Top/waiter/components/new-order-dialog'
 
 import { CashierHeader } from './cashier-header'
-import { StatsBar } from './stats-bar'
-import { OrderCard } from './order-card'
-import { TableCard, getGroupedTableStatus } from './table-card'
-import { ReceiptDialog } from './receipt-dialog'
-import { ExpenseManager } from './expense-manager'
+import { StatsBar } from './components/stats-bar'
+import { OrderCard } from './components/order-card'
+import { TableCard, getGroupedTableStatus } from './components/table-card'
+import { ReceiptDialog } from './components/receipt-dialog'
+import { ExpenseManager } from './components/expense-manager'
+import { AddItemsDialog } from './components/add-items-dialog'
 
 interface CashierExpense {
   id: string
@@ -31,8 +32,7 @@ interface CashierExpense {
 export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const { toast } = useToast()
 
-  // BUG FIX: Move sessionStorage read to useEffect
-  const [username, setUsername] = useState('cashier')
+  const [username, setUsername] = useState('')
   const [allOrders, setAllOrders] = useState<Order[]>([])
   const [expenses, setExpenses] = useState<CashierExpense[]>([])
   const [loadingOrders, setLoadingOrders] = useState(true)
@@ -40,7 +40,13 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
   const [receiptTableOrders, setReceiptTableOrders] = useState<Order[] | null>(null)
   const [payingTable, setPayingTable] = useState<string | null>(null)
+  const [addItemsOrder, setAddItemsOrder] = useState<Order | null>(null)
+  // URL-persistent tab
   const [activeTab, setActiveTab] = useState('active')
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    if (tab) setActiveTab(tab)
+  }, [])
   const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null)
   const [currentShiftId, setCurrentShiftId] = useState<string>('')
   const [shiftOpen, setShiftOpen] = useState<boolean | null>(null)
@@ -48,6 +54,32 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
 
   const prevOrderStatusRef = useRef<Record<string, Order['status']>>({})
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const assignedShiftRef = useRef<string | null>(null)
+
+  // New order creation state
+  const [showNewOrder, setShowNewOrder] = useState(false)
+  const [meals, setMeals] = useState<Meal[]>([])
+  const [loadingMeals, setLoadingMeals] = useState(true)
+  const [orderType, setOrderType] = useState<OrderType>('TAKEAWAY')
+  const [tableNumber] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [customerPhone, setCustomerPhone] = useState('')
+  const [customerEmail, setCustomerEmail] = useState('')
+  const [deliveryAddress, setDeliveryAddress] = useState('')
+  const [cart, setCart] = useState<CartItemType[]>([])
+  const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Search / filter for new order
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterCategory, setFilterCategory] = useState('الكل')
+
+  // Categories
+  const [categories, setCategories] = useState<{ value: string; label: string }[]>([])
+
+  // Customer search
+  const [customerResults, setCustomerResults] = useState<{ customerPhone: string; customerName: string; deliveryAddress: string | null; customerEmail: string }[]>([])
+  const [searchingCustomer, setSearchingCustomer] = useState(false)
 
   // BUG FIX: Move sessionStorage read to useEffect
   useEffect(() => {
@@ -64,7 +96,10 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
           if (shift) {
             setCurrentShiftId(shift.id)
             setShiftOpen(true)
-            await fetch(`/api/shifts/${shift.id}/assign-open-orders`, { method: 'POST' })
+            if (assignedShiftRef.current !== shift.id) {
+              assignedShiftRef.current = shift.id
+              await fetch(`/api/shifts/${shift.id}/assign-open-orders`, { method: 'POST' })
+            }
           } else {
             setCurrentShiftId('')
             setShiftOpen(false)
@@ -170,6 +205,233 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     }
   }, [fetchOrders, shiftOpen])
 
+  // Fetch meals for new order
+  const fetchMeals = useCallback(async () => {
+    try {
+      setLoadingMeals(true)
+      const res = await fetch('/api/meals')
+      if (res.ok) setMeals(await res.json())
+    } catch (err) {
+      console.error('Failed to fetch meals:', err)
+    } finally {
+      setLoadingMeals(false)
+    }
+  }, [])
+
+  // Cart helpers
+  const addToCart = useCallback((meal: Meal) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.mealId === meal.id)
+      if (existing) {
+        return prev.map((item) =>
+          item.mealId === meal.id ? { ...item, quantity: item.quantity + 1 } : item
+        )
+      }
+      return [
+        ...prev,
+        {
+          mealId: meal.id,
+          title: meal.title,
+          titleAr: meal.titleAr,
+          price: meal.price,
+          quantity: 1,
+          imageUrl: meal.imageUrl,
+          addOns: [],
+          preparationArea: meal.preparationArea || 'KITCHEN',
+          category: meal.category || '',
+        },
+      ]
+    })
+  }, [])
+
+  const removeFromCart = useCallback((mealId: string) => {
+    setCart((prev) => prev.filter((item) => item.mealId !== mealId))
+  }, [])
+
+  const updateCartQuantity = useCallback((mealId: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) =>
+          item.mealId === mealId
+            ? { ...item, quantity: Math.max(0, item.quantity + delta) }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
+    )
+  }, [])
+
+  const getCartQuantity = useCallback((mealId: string) => {
+    return cart.find((item) => item.mealId === mealId)?.quantity || 0
+  }, [cart])
+
+  // Handle submit order
+  const subtotal = useMemo(() => cart.reduce(
+    (sum, item) => sum + item.price * item.quantity + item.addOns.reduce((aSum, a) => aSum + a.price * item.quantity, 0), 0
+  ), [cart])
+
+  const serviceCharge = orderType === 'DINE_IN' ? Math.round(subtotal * SERVICE_CHARGE_RATE * 100) / 100 : 0
+  const deliveryFee = orderType === 'DELIVERY' ? DELIVERY_FEE : 0
+  const total = subtotal + serviceCharge + deliveryFee
+
+  const handleSubmitOrder = useCallback(async () => {
+    if (cart.length === 0) {
+      toast({ title: 'السلة فارغة', description: 'يرجى إضافة أصناف للطلب', variant: 'destructive' })
+      return
+    }
+    if ((orderType === 'TAKEAWAY' || orderType === 'DELIVERY') && !customerPhone.trim()) {
+      toast({ title: 'بيانات ناقصة', description: 'يرجى إدخال رقم هاتف العميل', variant: 'destructive' })
+      return
+    }
+    if (orderType !== 'DINE_IN' && !isValidEgyptianPhone(customerPhone)) {
+      toast({ title: 'رقم الهاتف غير صالح', description: 'يجب إدخال رقم هاتف مصري صحيح (11 رقماً).', variant: 'destructive' })
+      return
+    }
+    if (orderType !== 'DINE_IN' && !customerEmail.trim()) {
+      toast({ title: 'البريد الإلكتروني مطلوب', description: 'يرجى إدخال البريد الإلكتروني للعميل المسجل', variant: 'destructive' })
+      return
+    }
+    if (orderType === 'DELIVERY' && !deliveryAddress.trim()) {
+      toast({ title: 'بيانات ناقصة', description: 'يرجى إدخال عنوان التوصيل', variant: 'destructive' })
+      return
+    }
+
+    // Check email registration for TAKEAWAY/DELIVERY
+    if (orderType !== 'DINE_IN') {
+      const checkRes = await fetch('/api/web-users/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: customerEmail.trim() }),
+      })
+      const checkData = await checkRes.json()
+      if (!checkData.exists) {
+        toast({ title: 'البريد الإلكتروني غير مسجل', description: 'هذا البريد غير مسجل في النظام. الرجاء إنشاء حساب أولاً.', variant: 'destructive' })
+        return
+      }
+      if (checkData.blocked) {
+        toast({ title: 'حساب محظور', description: 'هذا الحساب محظور. لا يمكنك الطلب.', variant: 'destructive' })
+        return
+      }
+    }
+
+    setSubmitting(true)
+    try {
+      const orderPayload = {
+        type: orderType,
+        shiftId: currentShiftId || undefined,
+        customerName: customerName.trim() || 'كاشير',
+        customerPhone: customerPhone.trim() || '',
+        customerEmail: customerEmail.trim() || undefined,
+        deliveryAddress: orderType === 'DELIVERY' ? deliveryAddress.trim() : undefined,
+        isStaff: true,
+        items: cart.map((item) => ({
+          mealId: item.mealId,
+          mealTitle: item.title,
+          mealTitleAr: item.titleAr,
+          price: item.price,
+          quantity: item.quantity,
+          category: item.category || '',
+          preparationArea: item.preparationArea || 'KITCHEN',
+          addOns: item.addOns,
+          imageUrl: item.imageUrl,
+        })),
+        subtotal,
+        serviceCharge,
+        deliveryFee,
+        total,
+        notes: notes.trim() || undefined,
+      }
+
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderPayload),
+      })
+
+      if (res.ok) {
+        toast({ title: 'تم إرسال الطلب بنجاح', description: 'تم إضافة الطلب إلى الشيفت' })
+        setShowNewOrder(false)
+        setCart([])
+        setDeliveryAddress('')
+        setCustomerName('')
+        setCustomerPhone('')
+        setCustomerEmail('')
+        setNotes('')
+        fetchOrders()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: data.error || 'فشل في إرسال الطلب', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setSubmitting(false)
+    }
+  }, [cart, orderType, customerName, customerPhone, customerEmail, deliveryAddress, currentShiftId, subtotal, serviceCharge, total, notes, toast, fetchOrders])
+
+  const handleCustomerSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return
+    setSearchingCustomer(true)
+    try {
+      const isPhone = /^\d{6,}$/.test(query)
+      const param = isPhone ? `customerPhone=${encodeURIComponent(query)}` : `customerName=${encodeURIComponent(query)}`
+      const res = await fetch(`/api/orders?${param}`)
+      if (res.ok) {
+        const orders = await res.json()
+        const seen = new Set<string>()
+        const results = (Array.isArray(orders) ? orders : [])
+          .filter((o: { customerPhone: string }) => {
+            const key = o.customerPhone || ''
+            if (!key || seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          .map((o: { customerPhone: string; customerName: string; deliveryAddress: string | null; customerEmail: string | null }) => ({
+            customerPhone: o.customerPhone || '',
+            customerName: o.customerName || '',
+            deliveryAddress: o.deliveryAddress || null,
+            customerEmail: o.customerEmail || '',
+          }))
+        setCustomerResults(results)
+      } else {
+        setCustomerResults([])
+      }
+    } catch (err) {
+      console.error('Failed to search customer:', err)
+      setCustomerResults([])
+    } finally {
+      setSearchingCustomer(false)
+    }
+  }, [])
+
+  const handleSelectCustomer = useCallback((result: { customerPhone: string; customerName: string; deliveryAddress: string | null; customerEmail?: string }) => {
+    setCustomerPhone(result.customerPhone)
+    setCustomerName(result.customerName)
+    if (result.deliveryAddress) setDeliveryAddress(result.deliveryAddress)
+    if (result.customerEmail) setCustomerEmail(result.customerEmail)
+    setCustomerResults([])
+  }, [])
+
+  const handleEmailLookup = useCallback(async (email: string) => {
+    try {
+      const res = await fetch('/api/web-users/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      if (!data.exists || !data.user) return
+      const user = data.user
+      if (user.name) setCustomerName(user.name)
+      if (user.phone) setCustomerPhone(user.phone)
+      if (user.addresses?.length > 0) {
+        setDeliveryAddress(user.addresses[0].address)
+      }
+    } catch (err) {
+      console.error('Email lookup failed:', err)
+    }
+  }, [])
+
   useEffect(() => {
     if (shiftOpen !== true) return
     if (currentShiftId) fetchExpenses()
@@ -180,6 +442,33 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     pollIntervalRef.current = setInterval(() => fetchOrders(), 5000)
     return () => { if (pollIntervalRef.current) clearInterval(pollIntervalRef.current) }
   }, [fetchOrders, shiftOpen])
+
+  // Fetch meals when new order dialog opens
+  useEffect(() => {
+    if (showNewOrder) {
+      fetchMeals()
+      fetch('/api/categories').then(r => r.ok && r.json()).then(d => {
+        if (Array.isArray(d)) {
+          setCategories(d.map((c: { name: string }) => ({ value: c.name, label: c.name })))
+        }
+      }).catch((err) => console.error('Failed to fetch categories:', err))
+    }
+  }, [showNewOrder, fetchMeals])
+
+  // Reset cart and form when dialog opens
+  useEffect(() => {
+    if (showNewOrder) {
+      setCart([])
+      setOrderType('TAKEAWAY')
+      setCustomerName('')
+      setCustomerPhone('')
+      setDeliveryAddress('')
+      setNotes('')
+      setSearchQuery('')
+      setFilterCategory('الكل')
+      setCustomerResults([])
+    }
+  }, [showNewOrder])
 
   // Use shared relative timers hook
   const relativeTimers = useRelativeTimers(allOrders)
@@ -234,27 +523,50 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  const rejectOrder = async (orderId: string) => {
+    if (!window.confirm('هل أنت متأكد من رفض هذا الطلب؟')) return
+    setUpdatingOrderId(orderId)
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'CANCELLED', cancelledBy: username }),
+      })
+      if (res.ok) {
+        toast({ title: 'تم رفض الطلب', description: 'تم إلغاء الطلب' })
+        setAllOrders(prev => prev.filter(o => o.id !== orderId))
+        fetchOrders()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: data.error || 'فشل في إلغاء الطلب', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setUpdatingOrderId(null)
+    }
+  }
+
   const markTableAsPaid = async (orders: Order[]) => {
     const orderIds = orders.map((order) => order.id)
     setPayingTable(orders[0]?.tableNumber || orderIds[0])
     try {
-      const results = await Promise.all(orderIds.map((orderId) =>
-        fetch(`/api/orders/${orderId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'DELIVERED' }),
-        })
-      ))
-      if (results.every((res) => res.ok)) {
+      const res = await fetch('/api/tables/pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderIds }),
+      })
+      if (res.ok) {
         toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة جميع الطلبات في الطاولة' })
-        // حذف أوردرات الطاولة من الـ state فوراً
         setAllOrders(prev => prev.filter(o => !orderIds.includes(o.id)))
         fetchOrders()
         setReceiptTableOrders(null)
       } else {
-        toast({ title: 'خطأ', description: 'فشل في تحديث حالة بعض الطلبات', variant: 'destructive' })
+        const data = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: (data as { error?: string }).error || 'فشل في تحديث حالة بعض الطلبات', variant: 'destructive' })
       }
-    } catch {
+    } catch (err) {
+      console.error('Failed to pay table:', err)
       toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
     } finally {
       setPayingTable(null)
@@ -349,6 +661,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         readyCount={readyOrders.length}
         onRefresh={() => fetchOrders()}
         onLogout={onLogout}
+        onNewOrder={() => setShowNewOrder(true)}
       />
 
       <main className="mx-auto max-w-7xl p-4 md:p-6 space-y-6">
@@ -358,27 +671,48 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
           totalExpenses={totalExpenses}
         />
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} dir="rtl" className="w-full">
-          <TabsList className="mb-6 flex w-full gap-1 bg-muted/50 p-1 rounded-xl overflow-x-auto [&::-webkit-scrollbar]:hidden justify-start">
+        {/* Sticky Tab Buttons */}
+        <div className="sticky top-16 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pb-3 bg-background/95 backdrop-blur-md border-b border-border/30 mb-6">
+          <div className="flex gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
             {[
-              { value: 'active', icon: <ShoppingBag className="h-4 w-4" />, label: 'الطلبات النشطة', labelShort: 'النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
-              { value: 'delivered', icon: <Receipt className="h-4 w-4" />, label: 'المدفوعة', labelShort: 'المدفوعة', count: deliveredOrders.length },
-              { value: 'expenses', icon: <TrendingDown className="h-4 w-4" />, label: 'المصروفات', labelShort: 'المصروفات', count: expenses.length },
-            ].map(tab => (
-              <TabsTrigger key={tab.value} value={tab.value}
-                className={`shrink-0 gap-2 data-[state=active]:bg-[#D4AF37] data-[state=active]:text-black rounded-lg text-xs sm:text-sm sm:flex-1 relative ${tab.highlight ? 'animate-pulse' : ''}`}>
-                {tab.icon}<span className="sm:hidden">{tab.labelShort}</span><span className="hidden sm:inline">{tab.label}</span>
-                {tab.count > 0 && (
-                  <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
-                    {tab.count}
-                  </span>
-                )}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+              { value: 'active', icon: ShoppingBag, label: 'الطلبات النشطة', shortLabel: 'النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
+              { value: 'delivered', icon: Receipt, label: 'المدفوعة', shortLabel: 'المدفوعة', count: deliveredOrders.length },
+              { value: 'expenses', icon: TrendingDown, label: 'المصروفات', shortLabel: 'المصروفات', count: expenses.length },
+            ].map(tab => {
+              const TabIcon = tab.icon
+              const isActive = activeTab === tab.value
+              return (
+                <button
+                  key={tab.value}
+                  onClick={() => {
+                    setActiveTab(tab.value)
+                    const params = new URLSearchParams(window.location.search)
+                    params.set('tab', tab.value)
+                    window.history.replaceState(null, '', `?${params.toString()}`)
+                  }}
+                  className={`flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-lg text-xs sm:text-sm transition-all font-medium relative
+                    ${isActive
+                      ? 'bg-[#D4AF37] text-black shadow-md shadow-[#D4AF37]/20'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent hover:border-border/50'
+                    }`}
+                >
+                  <TabIcon className={`h-4 w-4 ${isActive ? 'text-black' : ''}`} />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">{tab.shortLabel}</span>
+                  {tab.count > 0 && (
+                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
 
-          {/* Active Orders */}
-          <TabsContent value="active">
+        {/* Active Orders */}
+        {activeTab === 'active' && (
+          <>
             {loadingOrders && activeOrders.length === 0 ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /></div>
             ) : activeOrders.length === 0 ? (
@@ -401,15 +735,19 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
                       onConfirm={confirmOrder}
                       onMarkAsPaid={markAsPaid}
                       onViewReceipt={setReceiptOrder}
+                      onReject={rejectOrder}
+                      onAddItems={setAddItemsOrder}
                     />
                   ))}
                 </AnimatePresence>
               </div>
             )}
-          </TabsContent>
+          </>
+        )}
 
-          {/* Delivered Orders */}
-          <TabsContent value="delivered">
+        {/* Delivered Orders */}
+        {activeTab === 'delivered' && (
+          <>
             {deliveredOrders.length === 0 ? (
               <div className="py-20 text-center">
                 <Receipt className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
@@ -427,24 +765,26 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
                       onConfirm={confirmOrder}
                       onMarkAsPaid={markAsPaid}
                       onViewReceipt={setReceiptOrder}
+                      onReject={rejectOrder}
+                      onAddItems={setAddItemsOrder}
                     />
                   ))}
                 </AnimatePresence>
               </div>
             )}
-          </TabsContent>
+          </>
+        )}
 
-          {/* Expenses Tab */}
-          <TabsContent value="expenses">
-            <ExpenseManager
-              expenses={expenses}
-              currentShiftId={currentShiftId}
-              username={username}
-              onExpensesChanged={fetchExpenses}
-                availableCash={shiftRevenue - totalExpenses}
-            />
-          </TabsContent>
-        </Tabs>
+        {/* Expenses Tab */}
+        {activeTab === 'expenses' && (
+          <ExpenseManager
+            expenses={expenses}
+            currentShiftId={currentShiftId}
+            username={username}
+            onExpensesChanged={fetchExpenses}
+            availableCash={shiftRevenue - totalExpenses}
+          />
+        )}
       </main>
 
       {/* Receipt Dialog */}
@@ -453,10 +793,60 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         receiptTableOrders={receiptTableOrders}
         updatingOrderId={updatingOrderId}
         payingTable={payingTable}
+        username={username}
         onMarkAsPaid={markAsPaid}
         onMarkTableAsPaid={markTableAsPaid}
         onCloseOrder={() => setReceiptOrder(null)}
         onCloseTable={() => setReceiptTableOrders(null)}
+      />
+
+      {/* Add Items to Existing Order Dialog */}
+      <AddItemsDialog
+        open={!!addItemsOrder}
+        onOpenChange={(open) => { if (!open) setAddItemsOrder(null) }}
+        order={addItemsOrder}
+        onItemsAdded={() => { fetchOrders(); setAddItemsOrder(null) }}
+      />
+
+      {/* New Order Dialog */}
+      <NewOrderDialog
+        open={showNewOrder}
+        onOpenChange={setShowNewOrder}
+        orderType={orderType}
+        setOrderType={setOrderType}
+        tableNumber={tableNumber}
+        setTableNumber={() => {}}
+        customerName={customerName}
+        setCustomerName={setCustomerName}
+        customerPhone={customerPhone}
+        setCustomerPhone={setCustomerPhone}
+        customerEmail={customerEmail}
+        setCustomerEmail={setCustomerEmail}
+        deliveryAddress={deliveryAddress}
+        setDeliveryAddress={setDeliveryAddress}
+        existingTableOrder={null}
+        allowedTypes={['TAKEAWAY', 'DELIVERY']}
+        categories={categories}
+        customerResults={customerResults}
+        onSearchCustomer={handleCustomerSearch}
+        onSelectCustomer={handleSelectCustomer}
+        onEmailLookup={handleEmailLookup}
+        searchingCustomer={searchingCustomer}
+        meals={meals}
+        loadingMeals={loadingMeals}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        filterCategory={filterCategory}
+        setFilterCategory={setFilterCategory}
+        cart={cart}
+        addToCart={addToCart}
+        removeFromCart={removeFromCart}
+        updateCartQuantity={updateCartQuantity}
+        getCartQuantity={getCartQuantity}
+        notes={notes}
+        setNotes={setNotes}
+        submitting={submitting}
+        onSubmit={handleSubmitOrder}
       />
     </div>
   )

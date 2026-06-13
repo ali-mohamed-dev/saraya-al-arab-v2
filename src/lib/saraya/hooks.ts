@@ -76,8 +76,8 @@ export function useOrderPolling(
 // ── useRelativeTimers ────────────────────────────────────────────────────
 
 export function useRelativeTimers(
-  orders: { id: string; createdAt: string }[],
-  seenAtMap?: Record<string, string>
+  orders: { id: string; createdAt: string; kitchenReceivedAt?: string; baristaReceivedAt?: string }[],
+  department?: 'KITCHEN' | 'BARISTA'
 ) {
   const [timers, setTimers] = useState<Record<string, string>>({})
   const ordersKey = orders.map((o) => o.id).sort().join(',')
@@ -86,16 +86,19 @@ export function useRelativeTimers(
     const updateTimers = () => {
       const newTimers: Record<string, string> = {}
       orders.forEach((o) => {
-        const referenceTime = seenAtMap?.[o.id] || o.createdAt
-        newTimers[o.id] = getRelativeTime(referenceTime)
+        const ref = department === 'KITCHEN'
+          ? (o.kitchenReceivedAt || o.createdAt)
+          : department === 'BARISTA'
+            ? (o.baristaReceivedAt || o.createdAt)
+            : o.createdAt
+        newTimers[o.id] = getRelativeTime(ref)
       })
       setTimers(newTimers)
     }
     updateTimers()
-    const id = setInterval(updateTimers, 30000)
+    const id = setInterval(updateTimers, 1000)
     return () => clearInterval(id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordersKey, seenAtMap])
+  }, [ordersKey, department])
 
   return timers
 }
@@ -105,24 +108,30 @@ export function useRelativeTimers(
 // لو الأوردر اختفى (مثلاً kitchenAccess=false) ورجع تاني، العداد يبدأ من الأول
 
 export function useSeenAtTracker(orders: { id: string }[]) {
-  const seenAtRef = useRef<Record<string, string>>({})
+  const [seenAt, setSeenAt] = useState<Record<string, string>>({})
 
-  const currentIds = new Set(orders.map(o => o.id))
+  useEffect(() => {
+    setSeenAt(prev => {
+      const currentIds = new Set(orders.map(o => o.id))
+      const next = { ...prev }
 
-  // حذف الإدخالات للأوردرات اللي اختفت من القائمة
-  // عشان لو الأوردر رجع تاني (بعد تأكيد الويتر) العداد يبدأ من وقت الرجوع مش من الأول
-  for (const id of Object.keys(seenAtRef.current)) {
-    if (!currentIds.has(id)) {
-      delete seenAtRef.current[id]
-    }
-  }
+      // حذف الإدخالات للأوردرات اللي اختفت من القائمة
+      for (const id of Object.keys(next)) {
+        if (!currentIds.has(id)) {
+          delete next[id]
+        }
+      }
 
-  // تسجيل وقت أول ظهور لكل أوردر جديد
-  orders.forEach((o) => {
-    if (!seenAtRef.current[o.id]) {
-      seenAtRef.current[o.id] = new Date().toISOString()
-    }
-  })
+      // تسجيل وقت أول ظهور لكل أوردر جديد
+      orders.forEach((o) => {
+        if (!next[o.id]) {
+          next[o.id] = new Date().toISOString()
+        }
+      })
 
-  return seenAtRef.current
+      return next
+    })
+  }, [orders])
+
+  return seenAt
 }

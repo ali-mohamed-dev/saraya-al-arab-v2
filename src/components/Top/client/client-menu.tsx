@@ -9,14 +9,14 @@ import {
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { HeroCarousel } from '@/components/Top/client/hero-carousel'
+import { HeroCarousel } from '@/components/Top/client/promotions/hero-carousel'
 import { MenuHeader } from '@/components/Top/client/menu-header'
-import { MenuCategories } from '@/components/Top/client/menu-categories'
-import { MenuGrid } from '@/components/Top/client/menu-grid'
+import { MenuCategories } from '@/components/Top/client/menu/menu-categories'
+import { MenuGrid } from '@/components/Top/client/menu/menu-grid'
 import { CartSummary } from '@/components/Top/client/cart-summary'
-import { OrderDetail } from '@/components/Top/client/order-detail'
-import { OrderTracking } from '@/components/Top/client/order-tracking'
-import { PromotionCard } from '@/components/Top/client/promotion-card'
+import { OrderDetail } from '@/components/Top/client/orders/order-detail'
+import { OrderTracking } from '@/components/Top/client/orders/order-tracking'
+import { PromotionCard } from '@/components/Top/client/promotions/promotion-card'
 import { useCartStore } from '@/store/cart-store'
 import { type Meal, type Promotion } from '@/lib/saraya/types'
 import { toast } from 'sonner'
@@ -24,13 +24,14 @@ import { motion } from 'framer-motion'
 
 interface ClientMenuProps {
   onAdminClick: () => void
+  onUserClick?: () => void
   initialMeals?: Meal[]
   initialPromotions?: Promotion[]
   initialTakingOrders?: boolean | null
   initialStoreMessage?: string
 }
 
-export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions = [], initialTakingOrders = null, initialStoreMessage = '' }: ClientMenuProps) {
+export function ClientMenu({ onAdminClick, onUserClick, initialMeals = [], initialPromotions = [], initialTakingOrders = null, initialStoreMessage = '' }: ClientMenuProps) {
   const [meals, setMeals] = useState<Meal[]>(initialMeals)
   const [loading, setLoading] = useState(initialMeals.length === 0)
   const [activeCategory, setActiveCategory] = useState('all')
@@ -74,16 +75,13 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
     const activeOrderId = localStorage.getItem('saraya-active-order-id')
     if (activeOrderId) {
       fetch(`/api/orders/${activeOrderId}`)
-        .then(res => {
-          if (!res.ok) { localStorage.removeItem('saraya-active-order-id'); return null }
-          return res.json()
-        })
+        .then(res => res.ok ? res.json() : null)
         .then(order => {
           if (order && ['DELIVERED', 'CANCELLED'].includes(order.status)) {
             localStorage.removeItem('saraya-active-order-id')
           }
         })
-        .catch(() => { localStorage.removeItem('saraya-active-order-id') })
+        .catch(() => { /* don't remove on network error — key may still be valid */ })
     }
   }, [])
 
@@ -218,7 +216,7 @@ export function ClientMenu({ onAdminClick, initialMeals = [], initialPromotions 
         </div>
       )}
 
-      <MenuHeader onAdminClick={onAdminClick} onTrackClick={handleOpenTracking} />
+      <MenuHeader onAdminClick={onAdminClick} onUserClick={onUserClick} onTrackClick={handleOpenTracking} />
 
       {/* زرار السلة العائم — ظاهر على طول */}
       <motion.button

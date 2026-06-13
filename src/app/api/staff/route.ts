@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { requireRole } from '@/lib/auth'
 
 // جلب قائمة الموظفين
 export async function GET() {
@@ -9,6 +10,7 @@ export async function GET() {
       orderBy: { createdAt: 'desc' },
       select: { id: true, username: true, role: true, isActive: true, createdAt: true, updatedAt: true }
     })
+    console.log(`[Staff API] Found ${staff.length} admin records:`, staff.map(s => s.username))
     return NextResponse.json(staff)
   } catch (error) {
     console.error('Staff fetch error:', error)
@@ -18,6 +20,9 @@ export async function GET() {
 
 // إضافة موظف جديد
 export async function POST(req: NextRequest) {
+  if (!requireRole(req, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const body = await req.json()
 

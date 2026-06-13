@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { SERVICE_CHARGE_RATE } from '@/lib/saraya/constants'
 
 export interface SelectedAddOn {
   id: string
@@ -29,7 +28,7 @@ interface CartStore {
   updateQuantity: (mealId: string, addOnKey: string, quantity: number) => void
   clearCart: () => void
   getTotalItems: () => number
-  getTotalPrice: () => number
+  getSubtotal: () => number
 }
 
 // Generate a unique key for a cart item based on meal + selected add-ons
@@ -95,13 +94,12 @@ export const useCartStore = create<CartStore>()(
         })),
       clearCart: () => set({ items: [] }),
       getTotalItems: () => cleanExpiredItems(get().items).reduce((sum, item) => sum + item.quantity, 0),
-      getTotalPrice: () => {
+      getSubtotal: () => {
           const cleanItems = cleanExpiredItems(get().items)
-          const subtotal = cleanItems.reduce((sum, item) => {
+          return cleanItems.reduce((sum, item) => {
             const addOnTotal = item.addOns?.reduce((s, a) => s + a.price, 0) || 0
             return sum + (item.price + addOnTotal) * item.quantity
           }, 0)
-          return subtotal
         },
     }),
     {

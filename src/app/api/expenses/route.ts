@@ -1,15 +1,19 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const adminExpense = searchParams.get('adminExpense')
+    const adminReport = searchParams.get('adminReport')
     const shiftId = searchParams.get('shiftId')
     const shiftIds = searchParams.get('shiftIds')
 
     const where: Record<string, unknown> = {}
-    if (adminExpense === 'true') {
+    if (adminReport === 'true') {
+      // Return ALL expenses (open + closed shifts). Frontend handles date filtering.
+    } else if (adminExpense === 'true') {
       where.shiftId = null
     } else if (shiftIds) {
       where.shiftId = { in: shiftIds.split(',').filter(Boolean) }
@@ -37,15 +41,46 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!requireRole(request, ['CASHIER', 'ADMIN'])) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
   try {
     const body = await request.json()
-    const { title, description, amount, category, shiftId, addedBy, createdBy } = body
+    const { title, description, amount, category, shiftId, addedBy, createdBy, employeeId } = body
 
     const resolvedDescription = description || title
     const resolvedCreatedBy = createdBy || addedBy || ''
 
     if (!resolvedDescription || !amount) {
       return NextResponse.json({ error: 'Description and amount are required' }, { status: 400 })
+    }
+
+    const parsedAmount = parseFloat(amount)
+    // FIX: Reject negative expense amounts (would artificially inflate net revenue)
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون رقم موجب' }, { status: 400 })
+    }
+
+    // Server-side validation: expense must not exceed shift's available cash
+    if (shiftId) {
+      const [shiftOrders, shiftExpenses] = await Promise.all([
+        db.order.findMany({
+          where: { shiftId, status: 'DELIVERED' },
+          select: { total: true },
+        }),
+        db.expense.findMany({
+          where: { shiftId },
+          select: { amount: true },
+        }),
+      ])
+      const shiftRevenue = shiftOrders.reduce((s, o) => s + o.total, 0)
+      const existingExpenses = shiftExpenses.reduce((s, e) => s + e.amount, 0)
+      const availableCash = shiftRevenue - existingExpenses
+      if (parsedAmount > availableCash) {
+        return NextResponse.json({
+          error: `لا يمكن إضافة مصروف بقيمة ${parsedAmount.toFixed(2)} ج.م. السيولة المتاحة ${Math.max(0, availableCash).toFixed(2)} ج.م فقط.`,
+        }, { status: 400 })
+      }
     }
 
     const expense = await db.expense.create({
@@ -55,6 +90,7 @@ export async function POST(request: NextRequest) {
         category: category || 'عام',
         shiftId: shiftId || null,
         createdBy: resolvedCreatedBy,
+        employeeId: employeeId || null,
       },
     })
 

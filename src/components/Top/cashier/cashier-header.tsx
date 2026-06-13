@@ -1,6 +1,6 @@
 'use client'
 
-import { LogOut, RefreshCw, Bell, DollarSign } from 'lucide-react'
+import { LogOut, RefreshCw, Bell, DollarSign, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/Top/shared/theme-toggle'
 
@@ -9,9 +9,10 @@ interface CashierHeaderProps {
   readyCount: number
   onRefresh: () => void
   onLogout: () => void
+  onNewOrder?: () => void
 }
 
-export function CashierHeader({ username, readyCount, onRefresh, onLogout }: CashierHeaderProps) {
+export function CashierHeader({ username, readyCount, onRefresh, onLogout, onNewOrder }: CashierHeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
@@ -30,6 +31,12 @@ export function CashierHeader({ username, readyCount, onRefresh, onLogout }: Cas
               <Bell className="h-4 w-4 text-green-400" />
               <span className="text-sm font-bold text-green-400">{readyCount} <span className="hidden sm:inline">جاهز للدفع</span></span>
             </div>
+          )}
+          {onNewOrder && (
+            <Button onClick={onNewOrder} className="gap-2 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 px-3 sm:px-4 h-9">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">طلب جديد</span>
+            </Button>
           )}
           <ThemeToggle />
           

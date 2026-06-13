@@ -7,14 +7,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import type { Order, KitchenBaristaStatus } from '@/lib/saraya/types'
-import { transformOrder, getRelativeTime, getElapsedMinutes, playNotificationSound, unlockAudio } from '@/lib/saraya/helpers'
-import { useRelativeTimers, useSeenAtTracker } from '@/lib/saraya/hooks'
+import { transformOrder, getElapsedMinutes, playNotificationSound, unlockAudio } from '@/lib/saraya/helpers'
+import { useRelativeTimers } from '@/lib/saraya/hooks'
 import { useKitchenOrders } from '@/lib/saraya/queries'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { KitchenHeader } from './kitchen-header'
-import { KitchenOrderCard } from './kitchen-order-card'
-import { KitchenEmptyState } from './kitchen-empty-state'
+import { KitchenOrderCard } from './components/kitchen-order-card'
+import { KitchenEmptyState } from './components/kitchen-empty-state'
 
 function isKitchenItem(item: { preparationArea: string }) {
   return item.preparationArea === 'KITCHEN'
@@ -184,6 +184,28 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     }
   }, [orders, queryClient, toast])
 
+  const acknowledgeKitchenAdditions = useCallback(async (orderId: string) => {
+    setUpdatingOrderIds(prev => new Set(prev).add(orderId))
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acknowledgeAdditions: 'KITCHEN' }),
+      })
+      if (res.ok) {
+        toast({ title: 'تم', description: 'تم استلام الإضافات' })
+        queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] })
+      } else {
+        toast({ title: 'خطأ', description: 'فشل في تأكيد استلام الإضافات', variant: 'destructive' })
+      }
+    } catch (err) {
+      console.error('Kitchen acknowledge additions error:', err)
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setUpdatingOrderIds(prev => { const next = new Set(prev); next.delete(orderId); return next })
+    }
+  }, [queryClient, toast])
+
   // فتح الـ AudioContext عند أول تفاعل مع الصفحة
   useEffect(() => {
     const unlock = () => unlockAudio()
@@ -205,14 +227,13 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
     return () => clearInterval(tick)
   }, [])
 
-  const seenAtMap = useSeenAtTracker(orders)
-  const relativeTimers = useRelativeTimers(orders, seenAtMap)
+  const relativeTimers = useRelativeTimers(orders, 'KITCHEN')
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch((err) => console.warn('Kitchen fullscreen error:', err))
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch((err) => console.warn('Kitchen exit fullscreen error:', err))
     }
   }, [])
 
@@ -333,10 +354,10 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
               <KitchenOrderCard
                 key={order.id}
                 order={order}
-                relativeTime={relativeTimers[order.id] || getRelativeTime(order.createdAt)}
-                seenAt={seenAtMap[order.id]}
+                relativeTime={relativeTimers[order.id]}
                 isUpdating={updatingOrderIds.has(order.id)}
                 onUpdateStatus={updateKitchenStatus}
+                onAcknowledgeAdditions={acknowledgeKitchenAdditions}
               />
             ))}
           </div>

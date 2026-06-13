@@ -1,7 +1,7 @@
 'use client'
 
 import { OrderType } from './types'
-import { UtensilsCrossed, ShoppingBag, Truck } from 'lucide-react'
+import { UtensilsCrossed, Truck } from 'lucide-react'
 
 interface OrderTypeSelectorProps {
   selectedType: OrderType

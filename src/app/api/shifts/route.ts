@@ -1,8 +1,12 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
 
 // GET /api/shifts - get all shifts or current open shift
 export async function GET(request: NextRequest) {
+  if (!requireRole(request, ['ADMIN', 'CASHIER', 'WAITER', 'KITCHEN', 'BARISTA'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { searchParams } = new URL(request.url)
     const current = searchParams.get('current')
@@ -31,7 +35,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(shift || null)
     }
 
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+
+    const where: any = {}
+    if (from || to) {
+      where.createdAt = {}
+      if (from) where.createdAt.gte = new Date(from)
+      if (to) where.createdAt.lte = new Date(to)
+    }
+
     const shifts = await db.shift.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
     })
     return NextResponse.json(shifts)
@@ -43,6 +58,9 @@ export async function GET(request: NextRequest) {
 
 // POST /api/shifts - start a new shift
 export async function POST(request: NextRequest) {
+  if (!requireRole(request, ['ADMIN', 'CASHIER'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const body = await request.json()
     const { startedBy } = body
@@ -58,9 +76,13 @@ export async function POST(request: NextRequest) {
         // حساب الإيرادات قبل الإغلاق
         const orders = await tx.order.findMany({
           where: { shiftId: openShift.id, status: 'DELIVERED' },
-          select: { total: true },
+          select: { total: true, discountAmount: true, discountType: true },
         })
         const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0)
+        const totalDiscounts = orders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+        const totalLoyaltyDiscounts = orders
+          .filter(o => o.discountType === 'POINTS')
+          .reduce((sum, o) => sum + (o.discountAmount || 0), 0)
 
         const expenses = await tx.expense.findMany({
           where: { shiftId: openShift.id },
@@ -76,17 +98,34 @@ export async function POST(request: NextRequest) {
             totalRevenue,
             totalExpenses,
             netRevenue: totalRevenue - totalExpenses,
+            totalDiscounts,
+            totalLoyaltyDiscounts,
           },
         })
       }
 
-      // إنشاء الشيفت الجديد
-      return tx.shift.create({
+      if (!startedBy || typeof startedBy !== 'string' || !startedBy.trim()) {
+        return NextResponse.json({ error: 'staffName required' }, { status: 400 })
+      }
+      const newShift = await tx.shift.create({
         data: {
-          startedBy: startedBy || 'admin',
+          startedBy: startedBy.trim(),
           status: 'OPEN',
         },
       })
+
+      // Reassign any non-terminal orders from closed shifts to the new shift
+      for (const closedShift of openShifts) {
+        await tx.order.updateMany({
+          where: {
+            shiftId: closedShift.id,
+            status: { notIn: ['DELIVERED', 'CANCELLED'] },
+          },
+          data: { shiftId: newShift.id },
+        })
+      }
+
+      return newShift
     })
 
     return NextResponse.json(shift, { status: 201 })

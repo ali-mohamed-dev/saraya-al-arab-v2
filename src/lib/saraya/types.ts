@@ -38,6 +38,7 @@ export interface OrderItem {
   preparationArea: string
   imageUrl?: string
   addOns?: { title: string; titleAr: string; price: number }[]
+  notes?: string
   addedQuantity?: number
   createdAt?: string
   updatedAt?: string
@@ -59,11 +60,19 @@ export interface Order {
   items: OrderItem[]
   subtotal: number
   serviceCharge: number
+  deliveryFee?: number
   total: number
+  discountType?: string
+  discountValue?: number
+  discountAmount?: number
+  discountReason?: string
+  discountAppliedBy?: string
   kitchenAccess: boolean
   baristaAccess: boolean
   kitchenStatus: KitchenBaristaStatus
   baristaStatus: KitchenBaristaStatus
+  kitchenReceivedAt?: string
+  baristaReceivedAt?: string
   notes?: string
   cancelledBy?: string
   shiftId?: string
@@ -143,6 +152,7 @@ export interface CartItemType {
   addOns: SelectedAddOn[]
   preparationArea?: string  // FIX: was missing — barista items were sent to KITCHEN
   category?: string
+  notes?: string            // ملاحظات على الصنف (قهوة سادة, إلخ)
 }
 
 // Order Stats
@@ -187,3 +197,4 @@ export interface DeleteTarget {
 }
 
 export type PreparationArea = 'KITCHEN' | 'BARISTA' | 'HALL'
+export type DiscountType = 'FIXED' | 'PERCENTAGE' | 'POINTS' | ''

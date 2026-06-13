@@ -1,9 +1,13 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import { requireRole } from '@/lib/auth'
 
 // تعديل بيانات موظف
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!requireRole(req, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     const body = await req.json()
@@ -38,6 +42,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 // حذف موظف
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  if (!requireRole(req, ['ADMIN'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   try {
     const { id } = await params
     const target = await db.admin.findUnique({ where: { id } })

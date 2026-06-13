@@ -8,7 +8,7 @@ import { OrderTypeSelector } from './order-type-selector'
 import { TableInfoForm } from './table-info-form'
 import { OrderSummary } from './order-summary'
 import { OrderSuccess } from './order-success'
-import { ArrowRight, ArrowLeft, ShoppingCart, X, User, Phone, MapPin, StickyNote } from 'lucide-react'
+import { ArrowRight, ArrowLeft, ShoppingCart, X, User, Phone, MapPin, StickyNote, Gift } from 'lucide-react'
 import { SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
 import { toast } from 'sonner'
 
@@ -36,14 +36,40 @@ export function CartSummary({ onClose }: CartSummaryProps) {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  // ─── Auto-fill بيانات العميل من localStorage ───
+  // Logged-in web user
+  const [webUser, setWebUser] = useState<{ id: string; email: string; name: string; phone?: string } | null>(null)
+  const [savedAddresses, setSavedAddresses] = useState<{ id: string; label: string; address: string }[]>([])
+  // Points
+  const [pointsBalance, setPointsBalance] = useState(0)
+  const [pointsValue, setPointsValue] = useState(0.10)
+  const [usePoints, setUsePoints] = useState(false)
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
+
+  // ─── Auto-fill بيانات العميل من الحساب المسجل ───
   useEffect(() => {
-    const savedPhone = localStorage.getItem('saraya-customer-phone')
-    if (savedPhone) setCustomerPhone(savedPhone)
-    const savedName = localStorage.getItem('saraya-customer-name')
-    if (savedName) setCustomerName(savedName)
-    const savedAddress = localStorage.getItem('saraya-delivery-address')
-    if (savedAddress) setDeliveryAddress(savedAddress)
+    const raw = sessionStorage.getItem('web-user-data')
+    if (raw) {
+      try {
+        const u = JSON.parse(raw)
+        setWebUser({ id: u.id, email: u.email, name: u.name, phone: u.phone })
+        if (u.phone) setCustomerPhone(u.phone)
+        if (u.name) setCustomerName(u.name)
+        // Load saved addresses
+        fetch(`/api/addresses?userId=${u.id}`).then(r => r.ok && r.json()).then(data => {
+          if (Array.isArray(data)) setSavedAddresses(data)
+        }).catch((err) => console.warn('Failed to load addresses:', err))
+        // Fetch points balance + loyalty settings
+        fetch(`/api/web-users/${u.id}`).then(r => r.ok ? r.json() : null).then(data => {
+          if (data?.pointsBalance !== undefined) setPointsBalance(data.pointsBalance)
+        }).catch((err) => console.warn('Failed to load points:', err))
+        fetch('/api/settings/loyalty').then(r => r.ok ? r.json() : null).then(data => {
+          if (data) {
+            setLoyaltyEnabled(data.loyaltyEnabled || false)
+            if (data.loyaltyCashback) setPointsValue(data.loyaltyCashback)
+          }
+        }).catch((err) => console.warn('Failed to load loyalty settings:', err))
+      } catch (err) { console.warn('User data processing error:', err) }
+    }
   }, [])
 
   // ─── Auto-fill table info from localStorage + active order ───
@@ -85,8 +111,8 @@ export function CartSummary({ onClose }: CartSummaryProps) {
                 }
               }
             }
-          } catch {
-            // سكّت الأخطاء - المستخدم ممكن يعمل verify يدوي
+          } catch (err) {
+            console.warn('Auto-verify (active order) failed:', err)
           }
         }
         autoVerify()
@@ -103,8 +129,8 @@ export function CartSummary({ onClose }: CartSummaryProps) {
             if (verifyRes.ok && verifyData.valid) {
               setTableInfo(prev => ({ ...prev, isValid: true }))
             }
-          } catch {
-            // سكّت الأخطاء
+          } catch (err) {
+            console.warn('Auto-verify (saved data) failed:', err)
           }
         }
         autoVerify()
@@ -118,14 +144,14 @@ export function CartSummary({ onClose }: CartSummaryProps) {
       return sum + (item.price + addOnsTotal) * item.quantity
     }, 0)
     
-    // رسوم الخدمة بس للصالة (dine-in)
     const serviceCharge = orderType === 'dine-in' ? subtotal * SERVICE_CHARGE_RATE : 0
-    // رسوم التوصيل للديلفري فقط
     const deliveryFee = orderType === 'delivery' ? DELIVERY_FEE : 0
-    const discount = 0
-    const total = subtotal + serviceCharge + deliveryFee - discount
-    return { subtotal, serviceCharge, deliveryFee, discount, total }
-  }, [items, orderType])
+    const pointsDiscount = usePoints && loyaltyEnabled && pointsBalance > 0
+      ? Math.min(pointsBalance * pointsValue, subtotal + serviceCharge + deliveryFee)
+      : 0
+    const total = subtotal + serviceCharge + deliveryFee - pointsDiscount
+    return { subtotal, serviceCharge, deliveryFee, discount: pointsDiscount, total }
+  }, [items, orderType, usePoints, loyaltyEnabled, pointsBalance, pointsValue])
 
   const canProceedToConfirm = () => {
     if (items.length === 0) return false
@@ -137,8 +163,8 @@ export function CartSummary({ onClose }: CartSummaryProps) {
   }
 
   const submitOrder = async () => {
-    // تحقق من الحد الأدنى للطلب
-    if (summary.total < 20) {
+    // تحقق من الحد الأدنى للطلب (قبل الخصم)
+    if (summary.subtotal + summary.serviceCharge + summary.deliveryFee < 20) {
       toast.error('الحد الأدنى للطلب 20 ج.م')
       return
     }
@@ -151,6 +177,7 @@ export function CartSummary({ onClose }: CartSummaryProps) {
         tableCode: orderType === 'dine-in' ? tableInfo.tableCode : null,
         customerName: customerName.trim() || 'عميل خارجي',
         customerPhone: customerPhone.trim(),
+        customerEmail: webUser?.email || undefined,
         deliveryAddress: orderType === 'delivery' ? deliveryAddress.trim() : null,
         items: items.map((item) => ({
           mealId: item.mealId,
@@ -168,6 +195,7 @@ export function CartSummary({ onClose }: CartSummaryProps) {
         serviceCharge: summary.serviceCharge,
         deliveryFee: summary.deliveryFee,
         total: summary.total,
+        redeemPoints: usePoints && loyaltyEnabled && pointsBalance > 0 ? Math.min(Math.ceil(summary.discount / pointsValue), pointsBalance) : 0,
       }
       const res = await fetch('/api/orders', {
         method: 'POST',
@@ -288,6 +316,20 @@ export function CartSummary({ onClose }: CartSummaryProps) {
                     <label className="text-sm font-medium flex items-center gap-1.5">
                       <MapPin className="h-4 w-4 text-primary" /> عنوان التوصيل *
                     </label>
+                    {savedAddresses.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {savedAddresses.map(addr => (
+                          <button key={addr.id} type="button" onClick={() => setDeliveryAddress(addr.address)}
+                            className={`text-xs rounded-lg border px-2.5 py-1.5 transition-all ${
+                              deliveryAddress === addr.address
+                                ? 'border-[#D4AF37] bg-[#D4AF37]/10 text-[#D4AF37]'
+                                : 'border-border/50 bg-muted/30 text-muted-foreground hover:border-[#D4AF37]/30'
+                            }`}>
+                            {addr.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <textarea
                       value={deliveryAddress}
                       onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -317,6 +359,28 @@ export function CartSummary({ onClose }: CartSummaryProps) {
         {step === 'confirm' && (
           <div className="space-y-6">
             <OrderSummary items={items} summary={summary} />
+            {/* Points redemption */}
+            {webUser && loyaltyEnabled && pointsBalance > 0 && (
+              <div className="rounded-xl border border-[#D4AF37]/20 bg-[#D4AF37]/5 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Gift className="h-4 w-4 text-[#D4AF37]" />
+                    <span className="text-sm font-medium">نقاط الولاء</span>
+                    <span className="text-xs text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full">{pointsBalance} نقطة</span>
+                  </div>
+                  <button onClick={() => setUsePoints(!usePoints)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${usePoints ? 'bg-[#D4AF37]' : 'bg-input'}`}>
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${usePoints ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
+                  </button>
+                </div>
+                {usePoints && (
+                  <div className="text-xs text-muted-foreground border-t border-[#D4AF37]/10 pt-2">
+                    خصم: <span className="font-bold text-[#D4AF37]">{summary.discount.toFixed(2)} ج.م</span>
+                    {' • '}سيتم خصم {Math.ceil(summary.discount / pointsValue)} نقطة من رصيدك
+                  </div>
+                )}
+              </div>
+            )}
             <div className="rounded-xl border bg-card p-4 space-y-2">
               <h4 className="font-semibold text-sm">تفاصيل الطلب</h4>
               <div className="flex items-center justify-between text-sm">

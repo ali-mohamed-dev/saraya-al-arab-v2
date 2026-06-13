@@ -10,7 +10,7 @@ async function fetchOrdersByStatuses(statuses: string[], shiftId: string, kitche
       fetch(`/api/orders?status=${status}${shiftParam}${accessParam}`)
         .then(r => r.ok ? r.json() : [])
         .then(data => (Array.isArray(data) ? data : data?.data ?? []).map(transformOrder))
-        .catch(() => [] as Order[])
+        .catch((err) => { console.error('queries fetchOrdersByStatuses error:', err); return [] as Order[] })
     )
   )
   return results.flat()

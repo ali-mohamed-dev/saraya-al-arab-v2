@@ -7,15 +7,15 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import type { Order, KitchenBaristaStatus } from '@/lib/saraya/types'
-import { transformOrder, getRelativeTime, playNotificationSound, unlockAudio } from '@/lib/saraya/helpers'
-import { useRelativeTimers, useSeenAtTracker } from '@/lib/saraya/hooks'
+import { transformOrder, playNotificationSound, unlockAudio } from '@/lib/saraya/helpers'
+import { useRelativeTimers } from '@/lib/saraya/hooks'
 import { usePageVisibility } from '@/lib/saraya/use-page-visibility'
 import { useBaristaOrders } from '@/lib/saraya/queries'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { BaristaHeader } from './barista-header'
-import { BaristaOrderCard } from './barista-order-card'
-import { BaristaEmptyState } from './barista-empty-state'
+import { BaristaOrderCard } from './components/barista-order-card'
+import { BaristaEmptyState } from './components/barista-empty-state'
 
 const REFRESH_INTERVAL_SECONDS = 5
 
@@ -201,11 +201,33 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
     }
   }
 
+  const acknowledgeBaristaAdditions = async (orderId: string) => {
+    setUpdatingOrderIds(prev => new Set(prev).add(orderId))
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acknowledgeAdditions: 'BARISTA' }),
+      })
+      if (res.ok) {
+        toast({ title: 'تم', description: 'تم استلام الإضافات' })
+        queryClient.invalidateQueries({ queryKey: ['barista-orders'] })
+      } else {
+        toast({ title: 'خطأ', description: 'فشل في تأكيد استلام الإضافات', variant: 'destructive' })
+      }
+    } catch (err) {
+      console.error('Barista acknowledge additions error:', err)
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setUpdatingOrderIds(prev => { const next = new Set(prev); next.delete(orderId); return next })
+    }
+  }
+
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch((err) => console.warn('Barista fullscreen error:', err))
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch((err) => console.warn('Barista exit fullscreen error:', err))
     }
   }, [])
 
@@ -224,7 +246,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     if (!pageVisible) return
-    setRefreshCountdown(prev => prev <= 1 ? REFRESH_INTERVAL_SECONDS : prev - 1)
+    setRefreshCountdown(REFRESH_INTERVAL_SECONDS)
     const tick = setInterval(() => {
       setRefreshCountdown(prev => prev <= 1 ? REFRESH_INTERVAL_SECONDS : prev - 1)
     }, 1000)
@@ -237,8 +259,7 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
     return () => document.removeEventListener('fullscreenchange', handleFs)
   }, [])
 
-  const seenAtMap = useSeenAtTracker(orders)
-  const relativeTimers = useRelativeTimers(orders, seenAtMap)
+  const relativeTimers = useRelativeTimers(orders, 'BARISTA')
 
   if (shiftLoading) {
     return (
@@ -323,10 +344,10 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
               <BaristaOrderCard
                 key={order.id}
                 order={order}
-                relativeTime={relativeTimers[order.id] || getRelativeTime(order.createdAt)}
-                seenAt={seenAtMap[order.id]}
+                relativeTime={relativeTimers[order.id]}
                 isUpdating={updatingOrderIds.has(order.id)}
                 onUpdateStatus={updateBaristaStatus}
+                onAcknowledgeAdditions={acknowledgeBaristaAdditions}
               />
             ))}
           </AnimatePresence>

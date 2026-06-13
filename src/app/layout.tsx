@@ -5,6 +5,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/Top/shared/theme-provider";
 import { QueryProvider } from "@/components/Top/shared/query-provider";
+import { KeepAlive } from "@/components/keep-alive";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,8 +35,8 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
-        <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{
-          __html: `
+        <Script id="theme-init" strategy="beforeInteractive">
+          {`
             try {
               if (localStorage.getItem('theme') === '"dark"' || localStorage.getItem('theme') === 'dark') {
                 document.documentElement.classList.add('dark');
@@ -45,14 +46,15 @@ export default function RootLayout({
             } catch(e) {
               document.documentElement.classList.remove('dark');
             }
-          `
-        }} />
+          `}
+        </Script>
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground font-sans`}
       >
         <ThemeProvider>
           <QueryProvider>
+            <KeepAlive />
             {children}
           </QueryProvider>
           <Toaster />
