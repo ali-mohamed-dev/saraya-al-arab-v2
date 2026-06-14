@@ -47,6 +47,12 @@ export interface OrderItem {
 export type OrderType = 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY'
 export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'READY_TO_PAY' | 'DELIVERED' | 'CANCELLED'
 export type KitchenBaristaStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'CANCELLED'
+export type PaymentMethod = 'CASH' | 'VISA' | 'VODAFONE_CASH'
+
+export interface Payment {
+  method: PaymentMethod
+  amount: number
+}
 
 export interface Order {
   id: string
@@ -75,6 +81,8 @@ export interface Order {
   baristaReceivedAt?: string
   notes?: string
   cancelledBy?: string
+  cancelReason?: string
+  payments?: Payment[]
   shiftId?: string
   createdAt: string
   updatedAt: string
@@ -103,10 +111,18 @@ export interface Promotion {
 export interface Shift {
   id: string
   startedBy: string
-  endedBy?: string   // FIX: was closedBy (not in schema)
+  endedBy?: string
   status: 'OPEN' | 'CLOSED'
-  endedAt?: string   // FIX: was closedAt (not in schema)
+  endedAt?: string
   notes?: string
+  totalRevenue: number
+  totalExpenses: number
+  netRevenue: number
+  totalDiscounts: number
+  totalLoyaltyDiscounts: number
+  cashRevenue?: number
+  visaRevenue?: number
+  vodafoneCashRevenue?: number
   createdAt: string
   updatedAt: string
 }
@@ -164,7 +180,11 @@ export interface OrderStats {
   readyToPayOrders: number
   cancelledOrders: number
   todayRevenue: number
+  shiftRevenue?: number
   todayOrders: number
+  cashRevenue?: number
+  visaRevenue?: number
+  vodafoneCashRevenue?: number
 }
 
 // Admin-specific types
@@ -177,6 +197,9 @@ export interface ShiftWithDetails {
   totalRevenue: number
   totalExpenses: number
   netRevenue: number
+  cashRevenue: number
+  visaRevenue: number
+  vodafoneCashRevenue: number
   status: string
   notes: string
 }

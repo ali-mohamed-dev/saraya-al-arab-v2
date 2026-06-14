@@ -86,20 +86,23 @@ model PromotionMeal {
 }
 
 model Shift {
-  id            String    @id @default(cuid())
-  status        String    @default("OPEN")
-  startedBy     String?
-  startedAt     DateTime  @default(now())
-  endedAt       DateTime?
-  endedBy       String?
-  notes         String?
-  totalRevenue  Float     @default(0)
-  totalExpenses Float     @default(0)
-  netRevenue    Float     @default(0)
-  totalDiscounts Float    @default(0)
-  totalLoyaltyDiscounts Float @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  status               String    @default("OPEN")
+  startedBy            String?
+  startedAt            DateTime  @default(now())
+  endedAt              DateTime?
+  endedBy              String?
+  notes                String?
+  totalRevenue         Float     @default(0)
+  totalExpenses        Float     @default(0)
+  netRevenue           Float     @default(0)
+  totalDiscounts       Float     @default(0)
+  totalLoyaltyDiscounts Float    @default(0)
+  cashRevenue          Float     @default(0)
+  visaRevenue          Float     @default(0)
+  vodafoneCashRevenue  Float     @default(0)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   orders   Order[]
   expenses Expense[]
@@ -133,6 +136,8 @@ model Order {
   baristaReceivedAt DateTime?
   notes           String      @default("")
   cancelledBy     String?
+  cancelReason    String      @default("")
+  payments        Json      @default("[]")
   shiftId         String?
   webUserId       String?
   createdAt       DateTime    @default(now())

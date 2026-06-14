@@ -3,7 +3,7 @@
 import { useEffect, useState, Dispatch, SetStateAction, useMemo, useCallback } from 'react'
 import Image from 'next/image' // Import Image from next/image
 import {
-  Eye, Check, Loader2, UtensilsCrossed
+  Eye, Check, Loader2, UtensilsCrossed, X
 } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
@@ -27,7 +27,7 @@ interface OrderDetailDialogProps {
   setSelectedOrder: Dispatch<SetStateAction<Order | null>>
   meals: Meal[]
   updatingOrderId: string | null
-  updateOrderStatus: (orderId: string, newStatus: string) => Promise<void>
+  updateOrderStatus: (orderId: string, newStatus: string, cancelReason?: string) => Promise<void>
   onOrdersUpdated: (updatedOrder: Order) => void
 }
 
@@ -46,6 +46,8 @@ export function OrderDetailDialog({
   const [editableOrderItems, setEditableOrderItems] = useState<OrderItem[] | null>(null)
   const [removedOrderItemIds, setRemovedOrderItemIds] = useState<string[]>([])
   const [savingOrderEdits, setSavingOrderEdits] = useState(false)
+  const [showCancelInput, setShowCancelInput] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
 
   // تحسين البحث عن الوجبات لتصبح O(1)
   const mealsMap = useMemo(() => {
@@ -408,14 +410,14 @@ export function OrderDetailDialog({
 
             {/* Action buttons */}
             <div className="pt-4 space-y-3 pb-8">
-              {displayOrder.status !== 'DELIVERED' && displayOrder.status !== 'CANCELLED' && (
+              {displayOrder.status !== 'DELIVERED' && displayOrder.status !== 'CANCELLED' && displayOrder.status !== 'READY_TO_PAY' && (
                 <Button onClick={handleSaveOrderEdits} disabled={savingOrderEdits}
                   className="w-full bg-blue-600 text-white hover:bg-blue-500 gap-2 font-bold">
                   {savingOrderEdits ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   حفظ التعديلات
                 </Button>
               )}
-              {displayOrder.type === 'DINE_IN' && displayOrder.status === 'READY' && displayItems.length > 0 && (
+              {displayOrder.type === 'DINE_IN' && displayOrder.status !== 'DELIVERED' && displayOrder.status !== 'CANCELLED' && displayOrder.status !== 'READY_TO_PAY' && displayItems.length > 0 && (
                 <Button onClick={() => { if (window.confirm('هل أنت متأكد من إغلاق الطاولة وإرسال الفاتورة للكاشير؟')) { updateOrderStatus(displayOrder.id, 'READY_TO_PAY'); setSelectedOrder(null); } }}
                   disabled={updatingOrderId === displayOrder.id}
                   className="w-full bg-green-600 text-white hover:bg-green-500 gap-2 font-bold">
@@ -423,13 +425,41 @@ export function OrderDetailDialog({
                   إغلاق الطاولة وإرسال للكاشير
                 </Button>
               )}
-              {displayOrder.status === 'PENDING' && displayOrder.type === 'DINE_IN' && displayItems.length > 0 && ( // Ensure not empty
+              {displayOrder.status === 'PENDING' && displayOrder.type === 'DINE_IN' && displayItems.length > 0 && (
                 <Button onClick={() => { updateOrderStatus(displayOrder.id, 'CONFIRMED'); setSelectedOrder(null); }}
                   disabled={updatingOrderId === displayOrder.id || savingOrderEdits}
                   className="w-full bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 gap-2 font-bold">
                   {updatingOrderId === displayOrder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   تأكيد الطلب
                 </Button>
+              )}
+              {displayOrder.status === 'PENDING' && !showCancelInput && (
+                <Button onClick={() => setShowCancelInput(true)}
+                  disabled={updatingOrderId === displayOrder.id}
+                  className="w-full bg-red-600 text-white hover:bg-red-500 gap-2 font-bold">
+                  <X className="h-4 w-4" />
+                  إلغاء الطلب
+                </Button>
+              )}
+              {displayOrder.status === 'PENDING' && showCancelInput && (
+                <div className="space-y-2">
+                  <Input
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    placeholder="سبب الإلغاء..."
+                    className="border-border/50 text-sm"
+                  />
+                  <div className="flex gap-2">
+                    <Button onClick={() => { setShowCancelInput(false); setCancelReason('') }}
+                      variant="outline" size="sm" className="flex-1 border-border/50">
+                      تراجع
+                    </Button>
+                    <Button onClick={() => { updateOrderStatus(displayOrder.id, 'CANCELLED', cancelReason); setSelectedOrder(null); setShowCancelInput(false); setCancelReason('') }}
+                      size="sm" className="flex-1 bg-red-600 text-white hover:bg-red-500 gap-2">
+                      <X className="h-4 w-4" /> تأكيد الإلغاء
+                    </Button>
+                  </div>
+                </div>
               )}
             </div>
             </div>

@@ -9,12 +9,10 @@ interface OrderSuccessProps {
 export function OrderSuccess({ onGoHome }: OrderSuccessProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 space-y-5 text-center">
-      {/* أيقونة النجاح بتصميم أنيق */}
       <div className="relative">
         <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30">
           <CheckCircle2 className="h-12 w-12 text-green-500" />
         </div>
-        {/* حلقة متحركة حول الأيقونة */}
         <div className="absolute inset-0 rounded-full border-2 border-green-500/20 animate-ping" style={{ animationDuration: '2s' }} />
       </div>
 

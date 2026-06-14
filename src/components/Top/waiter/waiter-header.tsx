@@ -1,8 +1,8 @@
 'use client'
 
-import { UtensilsCrossed, LogOut, Clock, ChefHat, Check } from 'lucide-react'
+import { useState } from 'react'
+import { UtensilsCrossed, LogOut, RefreshCw, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { ThemeToggle } from '@/components/Top/shared/theme-toggle'
 
 interface WaiterHeaderProps {
@@ -11,6 +11,7 @@ interface WaiterHeaderProps {
   preparingCount: number
   readyCount: number
   onLogout: () => void
+  onRefresh?: () => void
 }
 
 export function WaiterHeader({
@@ -19,7 +20,17 @@ export function WaiterHeader({
   preparingCount,
   readyCount,
   onLogout,
+  onRefresh,
 }: WaiterHeaderProps) {
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    if (!onRefresh) return
+    setRefreshing(true)
+    await onRefresh()
+    setTimeout(() => setRefreshing(false), 800)
+  }
+
   return (
     <header className="sticky top-0 z-30 border-b border-[#D4AF37]/20 bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
@@ -32,36 +43,40 @@ export function WaiterHeader({
             <p className="hidden sm:block text-xs text-muted-foreground">توب </p>
           </div>
         </div>
-          <div className="flex items-center gap-1 sm:gap-3">
-            {/* Active counts badges */}
-            <div className="hidden sm:flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Count badges */}
+          <div className="flex items-center gap-1">
             {pendingCount > 0 && (
-              <Badge className="bg-yellow-500/10 text-yellow-400 border-yellow-500/30 gap-1">
-                <Clock className="h-3 w-3" />
-                {pendingCount} جديد
-              </Badge>
+              <span className="flex items-center gap-1 rounded-md bg-yellow-500/10 border border-yellow-500/30 px-1.5 py-1 text-[10px] font-bold text-yellow-400">
+                {pendingCount}
+                <span className="hidden sm:inline">جديد</span>
+              </span>
             )}
             {confirmedCount > 0 && (
-              <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/30 gap-1">
-                <Check className="h-3 w-3" />
-                {confirmedCount} مؤكد
-              </Badge>
+              <span className="flex items-center gap-1 rounded-md bg-blue-500/10 border border-blue-500/30 px-1.5 py-1 text-[10px] font-bold text-blue-400">
+                {confirmedCount}
+                <span className="hidden sm:inline">مؤكد</span>
+              </span>
             )}
             {preparingCount > 0 && (
-              <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1">
-                <ChefHat className="h-3 w-3" />
-                {preparingCount} يُحضّر
-              </Badge>
+              <span className="flex items-center gap-1 rounded-md bg-amber-500/10 border border-amber-500/30 px-1.5 py-1 text-[10px] font-bold text-amber-400">
+                {preparingCount}
+                <span className="hidden sm:inline">يحضر</span>
+              </span>
             )}
             {readyCount > 0 && (
-              <Badge className="bg-green-500/10 text-green-400 border-green-500/30 gap-1">
-                <Check className="h-3 w-3" />
-                {readyCount} جاهز للاستلام
-              </Badge>
+              <span className="flex items-center gap-1 rounded-md bg-green-500/10 border border-green-500/30 px-1.5 py-1 text-[10px] font-bold text-green-400 animate-pulse">
+                {readyCount}
+                <span className="hidden sm:inline">جاهز</span>
+              </span>
             )}
           </div>
+          <button onClick={handleRefresh} disabled={refreshing}
+            className="flex items-center justify-center w-9 h-9 rounded-lg border border-border/40 text-muted-foreground hover:text-[#D4AF37] hover:border-[#D4AF37]/30 transition-all disabled:opacity-50">
+            {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </button>
           <ThemeToggle />
-          <Button variant="ghost" onClick={onLogout} className="gap-1 sm:gap-2 text-muted-foreground hover:text-red-400 px-2 sm:px-4">
+          <Button variant="ghost" onClick={onLogout} className="gap-1 sm:gap-2 text-muted-foreground hover:text-red-400 px-2 sm:px-3 h-9">
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">خروج</span>
           </Button>
@@ -70,4 +85,3 @@ export function WaiterHeader({
     </header>
   )
 }
-

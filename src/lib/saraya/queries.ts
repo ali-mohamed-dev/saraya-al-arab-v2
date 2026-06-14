@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Order } from '@/lib/saraya/types'
+import type { Meal, Order } from '@/lib/saraya/types'
 import { transformOrder } from '@/lib/saraya/helpers'
 
 async function fetchOrdersByStatuses(statuses: string[], shiftId: string, kitchenAccess?: boolean): Promise<Order[]> {
@@ -17,7 +17,7 @@ async function fetchOrdersByStatuses(statuses: string[], shiftId: string, kitche
 }
 
 export function useKitchenOrders(shiftId: string, enabled: boolean) {
-  return useQuery({
+  return useQuery<Order[]>({
     queryKey: ['kitchen-orders', shiftId],
     queryFn: () => fetchOrdersByStatuses(['CONFIRMED', 'PREPARING', 'READY'], shiftId, true),
     enabled: enabled && !!shiftId,
@@ -27,7 +27,7 @@ export function useKitchenOrders(shiftId: string, enabled: boolean) {
 }
 
 export function useBaristaOrders(shiftId: string, enabled: boolean) {
-  return useQuery({
+  return useQuery<Order[]>({
     queryKey: ['barista-orders', shiftId],
     queryFn: () => fetchOrdersByStatuses(['CONFIRMED', 'PREPARING', 'READY'], shiftId, undefined),
     enabled: enabled && !!shiftId,
@@ -37,7 +37,7 @@ export function useBaristaOrders(shiftId: string, enabled: boolean) {
 }
 
 export function useWaiterOrders(shiftId: string, enabled: boolean) {
-  return useQuery({
+  return useQuery<Order[]>({
     queryKey: ['waiter-orders', shiftId],
     queryFn: () => fetchOrdersByStatuses(['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'READY_TO_PAY'], shiftId),
     enabled: enabled && !!shiftId,
@@ -47,7 +47,7 @@ export function useWaiterOrders(shiftId: string, enabled: boolean) {
 }
 
 export function useMeals() {
-  return useQuery({
+  return useQuery<Meal[]>({
     queryKey: ['meals'],
     queryFn: async () => {
       const res = await fetch('/api/meals')

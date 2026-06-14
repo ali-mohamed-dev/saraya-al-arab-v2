@@ -4,13 +4,12 @@ import { Suspense, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAdminAuth } from '@/lib/saraya/hooks'
 import {
-  UtensilsCrossed, ClipboardList,
+  UtensilsCrossed,
   DollarSign, Users, Armchair, FileSpreadsheet, Globe, Settings, Clock,
 } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { AdminHeader } from './admin-header'
 import { MenuManagementTab } from './menu-management/menu-management-tab'
-import { OrdersTab } from './orders-tab/orders-tab'
 import { ShiftManagement } from './shift-management/shift-management'
 import { StaffManagement } from './staff-management/staff-management'
 import { TableManagement } from './table-management/table-management'
@@ -23,7 +22,6 @@ import { ClosingTimeAlert } from './components/closing-time-alert'
 
 const TABS = [
   { value: 'menu',     label: 'المنيو',    shortLabel: 'المنيو',      icon: UtensilsCrossed },
-  { value: 'orders',   label: 'الطلبات',    shortLabel: 'الطلبات',    icon: ClipboardList },
   { value: 'shift',    label: 'الشيفت',     shortLabel: 'الشيفت',     icon: DollarSign },
   { value: 'tables',   label: 'الطاولات',   shortLabel: 'الطاولات',   icon: Armchair },
   { value: 'employees',label: 'العمال',     shortLabel: 'العمال',     icon: Users },
@@ -127,7 +125,6 @@ function AdminPanelInner({ onLogout, adminUsername }: AdminPanelProps & { adminU
 
         {/* Tab Content */}
         {activeTab === 'menu' && <MenuManagementTab />}
-        {activeTab === 'orders' && <OrdersTab adminUsername={adminUsername} />}
         {activeTab === 'shift' && <ShiftManagement adminUsername={adminUsername} />}
         {activeTab === 'tables' && <TableManagement />}
         {activeTab === 'employees' && <EmployeesTab username={adminUsername} />}

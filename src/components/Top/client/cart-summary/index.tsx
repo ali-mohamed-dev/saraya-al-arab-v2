@@ -251,7 +251,7 @@ export function CartSummary({ onClose }: CartSummaryProps) {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full p-4" dir="rtl">
       <div className="flex items-center gap-3 border-b pb-3 mb-4">
         <ShoppingCart className="h-5 w-5 text-primary" />
         <h2 className="font-bold text-lg">

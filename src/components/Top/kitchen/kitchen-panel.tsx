@@ -45,7 +45,8 @@ export function KitchenPanel({ onLogout }: { onLogout: () => void }) {
   const prevOrderUpdatedAtRef = useRef<Record<string, string>>({})
 
   // React Query — auto polls every 5s, pauses when tab is hidden
-  const { data: ordersData, isLoading, isError, refetch } = useKitchenOrders(currentShiftId, shiftOpen === true)
+  const { data: rawOrdersData, isLoading, isError, refetch } = useKitchenOrders(currentShiftId, shiftOpen === true)
+  const ordersData: Order[] = rawOrdersData ?? []
   const orders = (ordersData || []).filter((order) =>
     order.items.some((item) => isKitchenItem(item)) &&
     order.kitchenStatus !== 'READY' &&

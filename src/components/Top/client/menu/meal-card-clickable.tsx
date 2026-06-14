@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import Image from 'next/image'
 import { useState } from 'react'
-import { Clock, ShoppingCart, UtensilsCrossed, Plus } from 'lucide-react'
+import { Clock, ShoppingCart, UtensilsCrossed } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { type Meal } from '@/lib/saraya/types'
 
@@ -15,52 +15,58 @@ interface MealCardProps {
 
 export function MealCardSimple({ meal, onViewDetail, priority }: MealCardProps) {
   const [imgError, setImgError] = useState(false)
+
   return (
     <motion.div
-      whileHover={{ scale: 1.02 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+      whileHover={{ scale: 1.015 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 24 }}
       onClick={() => onViewDetail(meal)}
-      className="cursor-pointer"
+      className="h-full cursor-pointer"
     >
-      <Card className="group overflow-hidden border border-border/50 bg-card transition-all duration-300 hover:border-[#D4AF37]/40 hover:shadow-[0_0_20px_rgba(202,170,74,0.15)]">
-        <div className="relative aspect-[4/3] overflow-hidden">
+      <Card className="group h-full overflow-hidden rounded-lg border border-border/60 bg-card shadow-sm transition-all duration-300 hover:border-[#D4AF37]/45 hover:shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
+        <div className="relative aspect-square overflow-hidden bg-muted sm:aspect-[4/3]">
           {meal.imageUrl && !imgError ? (
-            <Image src={meal.imageUrl} alt={meal.titleAr} fill className="object-cover transition-transform duration-500 group-hover:scale-105" sizes="(max-width: 768px) 50vw, 25vw" loading={priority ? 'eager' : 'lazy'} onError={() => setImgError(true)} />
+            <Image
+              src={meal.imageUrl}
+              alt={meal.titleAr || meal.title}
+              fill
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              loading={priority ? 'eager' : 'lazy'}
+              onError={() => setImgError(true)}
+            />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">
-              <UtensilsCrossed className="size-12 text-muted-foreground/40" />
+            <div className="flex h-full w-full items-center justify-center bg-muted">
+              <UtensilsCrossed className="size-10 text-muted-foreground/40" />
             </div>
           )}
-          <div className="pointer-events-none absolute inset-0 border-2 border-transparent transition-colors duration-300 group-hover:border-yellow-600/30" />
-          <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#D4AF37] text-black shadow-lg">
-              <Plus className="h-4 w-4" />
-            </div>
+
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
+          <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur">
+            <Clock className="h-3 w-3 text-[#D4AF37]" />
+            <span>{meal.prepTime}</span>
+          </div>
+          <div className="absolute left-2 top-2 rounded-md bg-[#D4AF37] px-2 py-1 text-sm font-black text-[#0F1419] shadow">
+            {meal.price.toFixed(0)} ج.م
           </div>
         </div>
-        <CardContent className="space-y-3 p-4">
-          <h3 className="text-lg font-bold leading-tight text-foreground text-right" dir="rtl">{meal.titleAr}</h3>
-          <p className="text-sm text-muted-foreground">{meal.title}</p>
+
+        <CardContent className="flex h-[168px] flex-col p-3 sm:h-[178px] sm:p-4">
+          <h3 className="line-clamp-2 min-h-[40px] text-right text-base font-black leading-tight text-foreground sm:text-lg" dir="rtl">
+            {meal.titleAr || meal.title}
+          </h3>
+          <p className="mt-1 truncate text-xs text-muted-foreground">{meal.title}</p>
           {meal.descriptionAr && (
-            <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground/80 text-right" dir="rtl">{meal.descriptionAr}</p>
+            <p className="mt-2 line-clamp-2 text-right text-xs leading-relaxed text-muted-foreground/80 sm:text-sm" dir="rtl">
+              {meal.descriptionAr}
+            </p>
           )}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-baseline gap-1">
-              <span className="text-xl font-bold text-yellow-600">{meal.price.toFixed(2)}</span>
-              <span className="text-sm font-medium text-yellow-600/80">جنيه</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-muted-foreground">
-              <Clock className="size-3.5" />
-              <span className="text-xs">{meal.prepTime}</span>
-            </div>
-          </div>
-          <div className="w-full flex items-center justify-center gap-2 rounded-lg bg-[#D4AF37]/10 py-2 text-sm font-medium text-[#D4AF37] transition-colors group-hover:bg-[#D4AF37]/20" dir="rtl">
+          <div className="mt-auto flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#D4AF37]/12 text-sm font-bold text-[#9A6F00] transition-colors group-hover:bg-[#D4AF37] group-hover:text-[#0F1419]" dir="rtl">
             <ShoppingCart className="h-4 w-4" />
-            اضغط للطلب
+            عرض التفاصيل
           </div>
         </CardContent>
       </Card>
     </motion.div>
   )
 }
-

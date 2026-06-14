@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { ClientMenu } from '@/components/Top/client/client-menu'
+import { ClientMenu } from '@/components/Top/client/menu/client-menu'
 import { AdminLogin } from '@/components/Top/admin-login'
 import { UserProfile } from '@/components/Top/user-profile/user-profile'
 import { ErrorBoundary } from '@/components/Top/shared/error-boundary'

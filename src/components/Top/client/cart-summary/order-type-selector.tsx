@@ -1,7 +1,7 @@
 'use client'
 
 import { OrderType } from './types'
-import { UtensilsCrossed, Truck } from 'lucide-react'
+import { UtensilsCrossed, Truck, ShoppingBag } from 'lucide-react'
 
 interface OrderTypeSelectorProps {
   selectedType: OrderType
@@ -12,19 +12,19 @@ export function OrderTypeSelector({ selectedType, onSelectType }: OrderTypeSelec
   const orderTypes: { type: OrderType; label: string; icon: React.ReactNode; desc: string }[] = [
     {
       type: 'dine-in',
-      label: 'تناول في المطعم',
+      label: 'صاله ',
       icon: <UtensilsCrossed className="h-6 w-6" />,
       desc: 'اختر طاولتك واطلب',
     },
     {
       type: 'takeaway',
-      label: 'أخذ بعيداً',
+      label: 'تيكاوي',
       icon: <ShoppingBag className="h-6 w-6" />,
       desc: 'خذ طلبك معك',
     },
     {
       type: 'delivery',
-      label: 'توصيل للمنزل',
+      label: 'ديلفري',
       icon: <Truck className="h-6 w-6" />,
       desc: 'نوصل طلبك لعنوانك',
     },

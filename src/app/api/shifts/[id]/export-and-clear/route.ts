@@ -16,7 +16,7 @@ export async function POST(
     const shift = await db.shift.findUnique({
       where: { id },
       include: {
-        orders: { where: { status: 'DELIVERED' }, include: { items: true } },
+        orders: { include: { items: true } },
         expenses: true,
       },
     })
@@ -41,11 +41,32 @@ export async function POST(
       }, { status: 400 })
     }
 
-    const totalRevenue = shift.orders.reduce((sum, o) => sum + o.total, 0)
+    const deliveredOrders = shift.orders.filter(o => o.status === 'DELIVERED')
+    const cancelledOrders = shift.orders.filter(o => o.status === 'CANCELLED')
+    const discountedOrders = shift.orders.filter(o => o.discountAmount && o.discountAmount > 0 && o.discountType !== 'POINTS')
+
+    const totalRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0)
     const totalExpenses = shift.expenses.reduce((sum, e) => sum + e.amount, 0)
     const netRevenue = totalRevenue - totalExpenses
-    const totalDiscounts = shift.orders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
-    const totalLoyaltyDiscounts = shift.orders.filter(o => o.discountType === 'POINTS').reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+    const totalDiscounts = deliveredOrders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+
+    // حساب طرق الدفع
+    let cashRevenue = 0
+    let visaRevenue = 0
+    let vodafoneCashRevenue = 0
+    deliveredOrders.forEach((o) => {
+      const payments = (o.payments as Array<{ method: string; amount: number }> | undefined) ?? []
+      if (payments.length > 0) {
+        payments.forEach((p) => {
+          if (p.method === 'CASH') cashRevenue += p.amount
+          else if (p.method === 'VISA') visaRevenue += p.amount
+          else if (p.method === 'VODAFONE_CASH') vodafoneCashRevenue += p.amount
+        })
+      } else {
+        // Legacy: no payments array → treat as cash
+        cashRevenue += o.total
+      }
+    })
 
     // 2. تحديث الوردية إلى حالة CLOSED
     const updatedShift = await db.shift.update({
@@ -59,7 +80,10 @@ export async function POST(
         totalExpenses,
         netRevenue,
         totalDiscounts,
-        totalLoyaltyDiscounts,
+        totalLoyaltyDiscounts: 0,
+        cashRevenue,
+        visaRevenue,
+        vodafoneCashRevenue,
       },
     })
 
@@ -72,7 +96,7 @@ export async function POST(
         endedBy: updatedShift.endedBy ?? undefined,
         notes: updatedShift.notes ?? undefined,
       },
-      orders: shift.orders.map(o => ({
+      orders: deliveredOrders.map(o => ({
         orderNumber: o.orderNumber ?? 0,
         type: o.type,
         status: o.status,
@@ -81,25 +105,50 @@ export async function POST(
         customerName: o.customerName,
         createdAt: o.createdAt,
         items: o.items?.map((it) => ({
-          name: it.mealTitle,
+          name: it.mealTitleAr || it.mealTitle,
           qty: it.quantity,
           price: it.price,
         })),
+        payments: (o.payments as Array<{ method: string; amount: number }> | undefined) ?? [],
+      })),
+      cancelledOrders: cancelledOrders.map(o => ({
+        orderNumber: o.orderNumber ?? 0,
+        type: o.type,
+        status: o.status,
+        total: o.total || 0,
+        customerName: o.customerName,
+        createdAt: o.createdAt,
+        cancelledBy: o.cancelledBy,
+        cancelReason: o.cancelReason,
+      })),
+      discountedOrders: discountedOrders.map(o => ({
+        orderNumber: o.orderNumber ?? 0,
+        type: o.type,
+        status: o.status,
+        total: o.total || 0,
+        customerName: o.customerName,
+        createdAt: o.createdAt,
+        discountType: o.discountType || undefined,
+        discountValue: o.discountValue || undefined,
+        discountAmount: o.discountAmount || 0,
+        discountReason: o.discountReason || undefined,
+        cancelledBy: o.discountAppliedBy || undefined,
       })),
       expenses: shift.expenses.map(e => ({
         title: e.description || '',
         amount: e.amount || 0,
         category: e.category || 'عام',
         addedBy: e.createdBy || '',
-        createdAt: e.createdAt
+        createdAt: e.createdAt,
       })),
       totalRevenue,
       totalExpenses,
-      netRevenue
+      netRevenue,
+      totalDiscounts,
+      cashRevenue,
+      visaRevenue,
+      vodafoneCashRevenue,
     })
-
-    // لا نمسح الأوردرات بعد إغلاق الشيفت — البيانات التاريخية مهمة للتقارير
-    // رقم الطلب (orderNumber) بيبدأ من 1 لكل شيفت جديد عشان الـ unique constraint على [shiftId, orderNumber]
 
     return new NextResponse(new Uint8Array(xlsxBuffer), {
       status: 200,

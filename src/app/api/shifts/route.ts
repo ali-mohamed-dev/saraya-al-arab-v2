@@ -76,13 +76,35 @@ export async function POST(request: NextRequest) {
         // حساب الإيرادات قبل الإغلاق
         const orders = await tx.order.findMany({
           where: { shiftId: openShift.id, status: 'DELIVERED' },
-          select: { total: true, discountAmount: true, discountType: true },
+          select: { total: true, discountAmount: true, discountType: true, payments: true },
         })
         const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0)
         const totalDiscounts = orders.reduce((sum, o) => sum + (o.discountAmount || 0), 0)
         const totalLoyaltyDiscounts = orders
           .filter(o => o.discountType === 'POINTS')
           .reduce((sum, o) => sum + (o.discountAmount || 0), 0)
+
+        const cashRevenue = orders.reduce((sum, o) => {
+          const payments = o.payments as Array<{ method: string; amount: number }> | null | undefined
+          if (payments && payments.length > 0) {
+            return sum + payments.filter(p => p.method === 'CASH').reduce((s, p) => s + p.amount, 0)
+          }
+          return sum + o.total
+        }, 0)
+        const visaRevenue = orders.reduce((sum, o) => {
+          const payments = o.payments as Array<{ method: string; amount: number }> | null | undefined
+          if (payments && payments.length > 0) {
+            return sum + payments.filter(p => p.method === 'VISA').reduce((s, p) => s + p.amount, 0)
+          }
+          return sum + 0
+        }, 0)
+        const vodafoneCashRevenue = orders.reduce((sum, o) => {
+          const payments = o.payments as Array<{ method: string; amount: number }> | null | undefined
+          if (payments && payments.length > 0) {
+            return sum + payments.filter(p => p.method === 'VODAFONE_CASH').reduce((s, p) => s + p.amount, 0)
+          }
+          return sum + 0
+        }, 0)
 
         const expenses = await tx.expense.findMany({
           where: { shiftId: openShift.id },
@@ -97,9 +119,12 @@ export async function POST(request: NextRequest) {
             endedAt: new Date(),
             totalRevenue,
             totalExpenses,
-            netRevenue: totalRevenue - totalExpenses,
+            netRevenue: cashRevenue - totalExpenses,
             totalDiscounts,
             totalLoyaltyDiscounts,
+            cashRevenue,
+            visaRevenue,
+            vodafoneCashRevenue,
           },
         })
       }

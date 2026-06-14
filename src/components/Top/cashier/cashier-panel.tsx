@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Bell, X, ShoppingBag, Receipt, Loader2, TrendingDown, DollarSign } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import type { Order, OrderType, CartItemType, Meal } from '@/lib/saraya/types'
+import type { Order, OrderType, CartItemType, Meal, Payment } from '@/lib/saraya/types'
 import { ORDER_STATUS_MAP, ORDER_TYPE_MAP, SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
 import { transformOrder, getRelativeTime, playNotificationSound, isValidEgyptianPhone } from '@/lib/saraya/helpers'
 import { useRelativeTimers } from '@/lib/saraya/hooks'
@@ -16,6 +16,7 @@ import { StatsBar } from './components/stats-bar'
 import { OrderCard } from './components/order-card'
 import { TableCard, getGroupedTableStatus } from './components/table-card'
 import { ReceiptDialog } from './components/receipt-dialog'
+import { PaymentDialog } from './components/payment-dialog'
 import { ExpenseManager } from './components/expense-manager'
 import { AddItemsDialog } from './components/add-items-dialog'
 
@@ -41,6 +42,9 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const [receiptTableOrders, setReceiptTableOrders] = useState<Order[] | null>(null)
   const [payingTable, setPayingTable] = useState<string | null>(null)
   const [addItemsOrder, setAddItemsOrder] = useState<Order | null>(null)
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false)
+  const [pendingPaymentOrder, setPendingPaymentOrder] = useState<Order | null>(null)
+  const [pendingPaymentOrders, setPendingPaymentOrders] = useState<Order[] | null>(null)
   // URL-persistent tab
   const [activeTab, setActiveTab] = useState('active')
   useEffect(() => {
@@ -70,6 +74,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const [listSearchQuery, setListSearchQuery] = useState('')
   // Search / filter for new order
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategory, setFilterCategory] = useState('الكل')
@@ -474,17 +479,16 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const relativeTimers = useRelativeTimers(allOrders)
 
   // Actions
-  const markAsPaid = async (orderId: string) => {
+  const markAsPaid = async (orderId: string, payments?: Payment[]) => {
     setUpdatingOrderId(orderId)
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'DELIVERED' }),
+        body: JSON.stringify({ status: 'DELIVERED', payments }),
       })
       if (res.ok) {
         toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة الطلب' })
-        // حذف الأوردر من الـ state فوراً بدون انتظار الـ fetch
         setAllOrders(prev => prev.filter(o => o.id !== orderId))
         fetchOrders()
         if (receiptOrder?.id === orderId) setReceiptOrder(null)
@@ -496,6 +500,29 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     } finally {
       setUpdatingOrderId(null)
     }
+  }
+
+  const handleRequestPayment = (order: Order) => {
+    setPendingPaymentOrder(order)
+    setPendingPaymentOrders(null)
+    setShowPaymentDialog(true)
+  }
+
+  const handleRequestTablePayment = (orders: Order[]) => {
+    setPendingPaymentOrders(orders)
+    setPendingPaymentOrder(null)
+    setShowPaymentDialog(true)
+  }
+
+  const handlePaymentConfirm = async (payments: Payment[]) => {
+    setShowPaymentDialog(false)
+    if (pendingPaymentOrder) {
+      await markAsPaid(pendingPaymentOrder.id, payments)
+    } else if (pendingPaymentOrders && pendingPaymentOrders.length > 0) {
+      await markTableAsPaid(pendingPaymentOrders, payments)
+    }
+    setPendingPaymentOrder(null)
+    setPendingPaymentOrders(null)
   }
 
   const confirmOrder = async (orderId: string) => {
@@ -523,14 +550,13 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  const rejectOrder = async (orderId: string) => {
-    if (!window.confirm('هل أنت متأكد من رفض هذا الطلب؟')) return
+  const rejectOrder = async (orderId: string, reason?: string) => {
     setUpdatingOrderId(orderId)
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'CANCELLED', cancelledBy: username }),
+        body: JSON.stringify({ status: 'CANCELLED', cancelledBy: username, cancelReason: reason || '' }),
       })
       if (res.ok) {
         toast({ title: 'تم رفض الطلب', description: 'تم إلغاء الطلب' })
@@ -547,14 +573,14 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
     }
   }
 
-  const markTableAsPaid = async (orders: Order[]) => {
+  const markTableAsPaid = async (orders: Order[], payments?: Payment[]) => {
     const orderIds = orders.map((order) => order.id)
     setPayingTable(orders[0]?.tableNumber || orderIds[0])
     try {
       const res = await fetch('/api/tables/pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderIds }),
+        body: JSON.stringify({ orderIds, payments }),
       })
       if (res.ok) {
         toast({ title: 'تم الدفع بنجاح', description: 'تم تحديث حالة جميع الطلبات في الطاولة' })
@@ -579,7 +605,36 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
   const deliveredOrders = allOrders.filter(o => o.status === 'DELIVERED')
   // BUG FIX: Rename todayRevenue to shiftRevenue (it's shift revenue, not today's)
   const shiftRevenue = deliveredOrders.reduce((sum, o) => sum + o.total, 0)
+  const cashRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments || payments.length === 0) return sum + o.total
+    return sum + payments.filter(p => p.method === 'CASH').reduce((s, p) => s + p.amount, 0)
+  }, 0)
+  const visaRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments) return sum
+    return sum + payments.filter(p => p.method === 'VISA').reduce((s, p) => s + p.amount, 0)
+  }, 0)
+  const vodafoneCashRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments) return sum
+    return sum + payments.filter(p => p.method === 'VODAFONE_CASH').reduce((s, p) => s + p.amount, 0)
+  }, 0)
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0)
+
+  // Search/filter
+  const searchedActiveOrders = listSearchQuery
+    ? activeOrders.filter(o =>
+        String(o.orderNumber).includes(listSearchQuery) ||
+        o.customerName?.toLowerCase().includes(listSearchQuery.toLowerCase())
+      )
+    : activeOrders
+  const searchedDeliveredOrders = listSearchQuery
+    ? deliveredOrders.filter(o =>
+        String(o.orderNumber).includes(listSearchQuery) ||
+        o.customerName?.toLowerCase().includes(listSearchQuery.toLowerCase())
+      )
+    : deliveredOrders
 
   const dineInTableGroups = activeOrders.reduce<Record<string, Order[]>>((acc, order) => {
     if (order.type === 'DINE_IN' && order.tableNumber) {
@@ -659,7 +714,7 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
       <CashierHeader
         username={username}
         readyCount={readyOrders.length}
-        onRefresh={() => fetchOrders()}
+        onRefresh={() => fetchOrders(true)}
         onLogout={onLogout}
         onNewOrder={() => setShowNewOrder(true)}
       />
@@ -668,77 +723,153 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         <StatsBar
           activeCount={activeOrders.length}
           readyCount={readyOrders.length}
+          shiftRevenue={shiftRevenue}
+          cashRevenue={cashRevenue}
+          visaRevenue={visaRevenue}
+          vodafoneCashRevenue={vodafoneCashRevenue}
           totalExpenses={totalExpenses}
         />
 
-        {/* Sticky Tab Buttons */}
-        <div className="sticky top-16 z-20 -mx-4 md:-mx-6 px-4 md:px-6 pb-3 bg-background/95 backdrop-blur-md border-b border-border/30 mb-6">
-          <div className="flex gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            {[
-              { value: 'active', icon: ShoppingBag, label: 'الطلبات النشطة', shortLabel: 'النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
-              { value: 'delivered', icon: Receipt, label: 'المدفوعة', shortLabel: 'المدفوعة', count: deliveredOrders.length },
-              { value: 'expenses', icon: TrendingDown, label: 'المصروفات', shortLabel: 'المصروفات', count: expenses.length },
-            ].map(tab => {
-              const TabIcon = tab.icon
-              const isActive = activeTab === tab.value
-              return (
-                <button
-                  key={tab.value}
-                  onClick={() => {
-                    setActiveTab(tab.value)
-                    const params = new URLSearchParams(window.location.search)
-                    params.set('tab', tab.value)
-                    window.history.replaceState(null, '', `?${params.toString()}`)
-                  }}
-                  className={`flex items-center gap-1.5 shrink-0 px-3 py-2 rounded-lg text-xs sm:text-sm transition-all font-medium relative
-                    ${isActive
-                      ? 'bg-[#D4AF37] text-black shadow-md shadow-[#D4AF37]/20'
-                      : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent hover:border-border/50'
-                    }`}
-                >
-                  <TabIcon className={`h-4 w-4 ${isActive ? 'text-black' : ''}`} />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                  <span className="sm:hidden">{tab.shortLabel}</span>
-                  {tab.count > 0 && (
-                    <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
+        {/* Sticky Tab Buttons + Search */}
+        <div className="sticky top-16 z-20 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-background/95 backdrop-blur-md border-b border-border/30 mb-2">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex gap-1 overflow-x-auto [&::-webkit-scrollbar]:hidden flex-1">
+              {[
+                { value: 'active', icon: ShoppingBag, label: 'الطلبات النشطة', shortLabel: 'النشطة', count: activeOrders.length, highlight: readyOrders.length > 0 },
+                { value: 'delivered', icon: Receipt, label: 'المدفوعة', shortLabel: 'المدفوعة', count: deliveredOrders.length },
+                { value: 'expenses', icon: TrendingDown, label: 'المصروفات', shortLabel: 'المصروفات', count: expenses.length },
+              ].map(tab => {
+                const TabIcon = tab.icon
+                const isActive = activeTab === tab.value
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => {
+                      setActiveTab(tab.value)
+                      const params = new URLSearchParams(window.location.search)
+                      params.set('tab', tab.value)
+                      window.history.replaceState(null, '', `?${params.toString()}`)
+                    }}
+                    className={`flex items-center gap-1 shrink-0 px-2.5 py-1.5 rounded-lg text-xs sm:text-sm transition-all font-medium relative
+                      ${isActive
+                        ? 'bg-[#D4AF37] text-black shadow-md shadow-[#D4AF37]/20'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent hover:border-border/50'
+                      }`}
+                  >
+                    <TabIcon className={`h-3.5 w-3.5 ${isActive ? 'text-black' : ''}`} />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    <span className="sm:hidden">{tab.shortLabel}</span>
+                    {tab.count > 0 && (
+                      <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] text-white font-bold ${tab.highlight ? 'bg-green-500' : 'bg-[#D4AF37]/70'}`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="text-[10px] text-muted-foreground shrink-0 pl-2 border-r border-border/30 mr-1 hidden sm:block">
+              <span className="text-emerald-400 font-bold">{shiftRevenue.toFixed(0)} ج.م</span>
+              <span className="mr-1">إيرادات</span>
+            </div>
           </div>
+          {/* Search input */}
+          {activeTab !== 'expenses' && (
+            <div className="relative">
+              <input
+                type="text"
+                value={listSearchQuery}
+                onChange={(e) => setListSearchQuery(e.target.value)}
+                placeholder="ابحث برقم الطلب أو اسم العميل..."
+                className="w-full rounded-lg border border-border/30 bg-muted/40 px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-[#D4AF37]/50 focus:outline-none transition-colors"
+              />
+              {listSearchQuery && (
+                <button onClick={() => setListSearchQuery('')} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/40 hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Active Orders */}
         {activeTab === 'active' && (
           <>
             {loadingOrders && activeOrders.length === 0 ? (
-              <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" /></div>
-            ) : activeOrders.length === 0 ? (
-              <div className="py-20 text-center">
-                <ShoppingBag className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
-                <p className="text-lg text-muted-foreground">لا توجد طلبات نشطة</p>
-              </div>
-            ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="rounded-xl border border-border/30 bg-card p-4 space-y-3 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-muted" />
+                      <div className="space-y-1.5 flex-1">
+                        <div className="h-3 w-20 rounded bg-muted" />
+                        <div className="h-2.5 w-14 rounded bg-muted" />
+                      </div>
+                    </div>
+                    <div className="h-2.5 w-full rounded bg-muted" />
+                    <div className="h-2.5 w-3/4 rounded bg-muted" />
+                    <div className="h-2.5 w-1/2 rounded bg-muted" />
+                  </div>
+                ))}
+              </div>
+            ) : searchedActiveOrders.length === 0 && listSearchQuery ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
+                  <ShoppingBag className="h-10 w-10 text-muted-foreground/20" />
+                </div>
+                <p className="text-base font-bold text-muted-foreground mb-1">لا توجد نتائج للبحث</p>
+                <p className="text-sm text-muted-foreground/60">جرب رقم طلب أو اسم عميل مختلف</p>
+              </motion.div>
+            ) : activeOrders.length === 0 ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
+                  <ShoppingBag className="h-10 w-10 text-muted-foreground/20" />
+                </div>
+                <p className="text-base font-bold text-muted-foreground mb-1">لا توجد طلبات نشطة</p>
+                <p className="text-sm text-muted-foreground/60">بانتظار وصول الطلبات الجديدة</p>
+              </motion.div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
-                  {groupedTableOrders.map(([table, orders]) => (
-                    <TableCard key={`table-${table}`} tableNumber={table} orders={orders} onViewReceipt={setReceiptTableOrders} />
-                  ))}
-                  {remainingOrders.map(order => (
-                    <OrderCard
-                      key={order.id}
-                      order={order}
-                      relativeTime={relativeTimers[order.id] || getRelativeTime(order.createdAt)}
-                      updatingOrderId={updatingOrderId}
-                      onConfirm={confirmOrder}
-                      onMarkAsPaid={markAsPaid}
-                      onViewReceipt={setReceiptOrder}
-                      onReject={rejectOrder}
-                      onAddItems={setAddItemsOrder}
-                    />
-                  ))}
+                  {listSearchQuery
+                    ? searchedActiveOrders.map(order => (
+                        <OrderCard
+                          key={order.id}
+                          order={order}
+                          relativeTime={relativeTimers[order.id] || getRelativeTime(order.createdAt)}
+                          updatingOrderId={updatingOrderId}
+                          onConfirm={confirmOrder}
+                          onMarkAsPaid={markAsPaid}
+                          onViewReceipt={setReceiptOrder}
+                          onReject={(orderId) => {
+                            const reason = window.prompt('سبب رفض الطلب:') || ''
+                            if (reason !== null) rejectOrder(orderId, reason)
+                          }}
+                          onAddItems={setAddItemsOrder}
+                        />
+                      ))
+                    : <>
+                        {groupedTableOrders.map(([table, orders]) => (
+                          <TableCard key={`table-${table}`} tableNumber={table} orders={orders} onViewReceipt={setReceiptTableOrders} />
+                        ))}
+                        {remainingOrders.map(order => (
+                          <OrderCard
+                            key={order.id}
+                            order={order}
+                            relativeTime={relativeTimers[order.id] || getRelativeTime(order.createdAt)}
+                            updatingOrderId={updatingOrderId}
+                            onConfirm={confirmOrder}
+                            onMarkAsPaid={markAsPaid}
+                            onViewReceipt={setReceiptOrder}
+                            onReject={(orderId) => {
+                            const reason = window.prompt('سبب رفض الطلب:') || ''
+                            if (reason !== null) rejectOrder(orderId, reason)
+                          }}
+                            onAddItems={setAddItemsOrder}
+                          />
+                        ))}
+                      </>
+                  }
                 </AnimatePresence>
               </div>
             )}
@@ -748,15 +879,26 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         {/* Delivered Orders */}
         {activeTab === 'delivered' && (
           <>
-            {deliveredOrders.length === 0 ? (
-              <div className="py-20 text-center">
-                <Receipt className="mx-auto mb-4 h-16 w-16 text-muted-foreground/20" />
-                <p className="text-lg text-muted-foreground">لا توجد فواتير مدفوعة</p>
-              </div>
+            {searchedDeliveredOrders.length === 0 && listSearchQuery ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
+                  <Receipt className="h-10 w-10 text-muted-foreground/20" />
+                </div>
+                <p className="text-base font-bold text-muted-foreground mb-1">لا توجد نتائج للبحث</p>
+                <p className="text-sm text-muted-foreground/60">جرب رقم طلب أو اسم عميل مختلف</p>
+              </motion.div>
+            ) : deliveredOrders.length === 0 ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="py-20 text-center">
+                <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
+                  <Receipt className="h-10 w-10 text-muted-foreground/20" />
+                </div>
+                <p className="text-base font-bold text-muted-foreground mb-1">لا توجد فواتير مدفوعة</p>
+                <p className="text-sm text-muted-foreground/60">الطلبات المدفوعة ستظهر هنا</p>
+              </motion.div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <AnimatePresence>
-                  {deliveredOrders.map(order => (
+                  {(listSearchQuery ? searchedDeliveredOrders : deliveredOrders).map(order => (
                     <OrderCard
                       key={order.id}
                       order={order}
@@ -765,7 +907,10 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
                       onConfirm={confirmOrder}
                       onMarkAsPaid={markAsPaid}
                       onViewReceipt={setReceiptOrder}
-                      onReject={rejectOrder}
+                      onReject={(orderId) => {
+                            const reason = window.prompt('سبب رفض الطلب:') || ''
+                            if (reason !== null) rejectOrder(orderId, reason)
+                          }}
                       onAddItems={setAddItemsOrder}
                     />
                   ))}
@@ -796,6 +941,8 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         username={username}
         onMarkAsPaid={markAsPaid}
         onMarkTableAsPaid={markTableAsPaid}
+        onRequestPayment={handleRequestPayment}
+        onRequestTablePayment={handleRequestTablePayment}
         onCloseOrder={() => setReceiptOrder(null)}
         onCloseTable={() => setReceiptTableOrders(null)}
       />
@@ -847,6 +994,21 @@ export function CashierPanel({ onLogout }: { onLogout: () => void }) {
         setNotes={setNotes}
         submitting={submitting}
         onSubmit={handleSubmitOrder}
+      />
+
+      {/* Payment Method Dialog */}
+      <PaymentDialog
+        open={showPaymentDialog}
+        totalAmount={pendingPaymentOrder
+          ? pendingPaymentOrder.total
+          : (pendingPaymentOrders?.reduce((s, o) => s + o.total, 0) ?? 0)}
+        orderLabel={pendingPaymentOrder
+          ? `طلب #${pendingPaymentOrder.orderNumber}`
+          : (pendingPaymentOrders?.[0]?.tableNumber
+            ? `طاولة ${pendingPaymentOrders[0].tableNumber}`
+            : '')}
+        onConfirm={handlePaymentConfirm}
+        onCancel={() => { setShowPaymentDialog(false); setPendingPaymentOrder(null); setPendingPaymentOrders(null) }}
       />
     </div>
   )

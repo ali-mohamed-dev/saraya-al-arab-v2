@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { CartItemType, useCartStore } from '@/store/cart-store'
-import { Minus, Plus, Trash2, ShoppingCart } from 'lucide-react'
+import { Clock, Minus, Plus, Trash2, ShoppingCart } from 'lucide-react'
 
 const CART_EXPIRY_WARNING_MS = 90 * 60 * 1000 // 90 دقيقة
 const CART_EXPIRY_MS = 2 * 60 * 60 * 1000 // ساعتين

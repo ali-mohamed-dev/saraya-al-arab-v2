@@ -40,6 +40,39 @@ export async function GET(request: Request) {
       },
     })
 
+    // Shift revenue — ALL delivered orders in the shift (no date filter)
+    let shiftRevenue: number | undefined
+    let cashRevenue: number | undefined
+    let visaRevenue: number | undefined
+    let vodafoneCashRevenue: number | undefined
+    if (shiftId) {
+      const shiftResult = await db.order.aggregate({
+        _sum: { total: true },
+        where: { shiftId, status: 'DELIVERED' },
+      })
+      shiftRevenue = shiftResult._sum.total ?? 0
+
+      // Payment breakdown from delivered orders
+      const deliveredOrders = await db.order.findMany({
+        where: { shiftId, status: 'DELIVERED' },
+        select: { total: true, payments: true },
+      })
+      cashRevenue = 0; visaRevenue = 0; vodafoneCashRevenue = 0
+      for (const o of deliveredOrders) {
+        const payments = Array.isArray(o.payments) ? (o.payments as Array<{ method: string; amount: number }>) : []
+        if (payments.length > 0) {
+          for (const p of payments) {
+            if (p.method === 'CASH') cashRevenue += p.amount
+            else if (p.method === 'VISA') visaRevenue += p.amount
+            else if (p.method === 'VODAFONE_CASH') vodafoneCashRevenue += p.amount
+          }
+        } else {
+          // Legacy order without payments → treat as cash
+          cashRevenue += o.total
+        }
+      }
+    }
+
     return NextResponse.json({
       totalOrders,
       pendingOrders,
@@ -48,7 +81,11 @@ export async function GET(request: Request) {
       readyToPayOrders,
       cancelledOrders,
       todayRevenue: todayOrdersResult._sum.total ?? 0,
+      shiftRevenue,
       todayOrders:  todayOrdersResult._count,
+      cashRevenue,
+      visaRevenue,
+      vodafoneCashRevenue,
     })
   } catch (error) {
     console.error('Error fetching order stats:', error)

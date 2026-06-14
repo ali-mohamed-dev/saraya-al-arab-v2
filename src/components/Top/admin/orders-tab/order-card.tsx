@@ -1,19 +1,18 @@
 'use client'
 
-import { Clock, Phone, MapPin, Utensils, Download, Check, Flame, CheckCircle, BadgeCheck, X, Loader2, Package, Eye } from 'lucide-react'
+import { Phone, MapPin, Utensils, Check, Flame, CheckCircle, BadgeCheck, X, Loader2, Package, Eye, Clock, ChefHat } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { ORDER_STATUS_MAP } from '@/lib/saraya/constants'
 import type { Order } from '@/lib/saraya/types'
 import { getRelativeTime } from '@/lib/saraya/helpers'
 
-const ORDER_TYPE_MAP_WITH_ICONS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  DINE_IN:   { label: 'صالة',    icon: <Utensils className="h-3.5 w-3.5" />, color: 'text-blue-400'   },
-  TAKEAWAY:  { label: 'تيكاوي', icon: <Package  className="h-3.5 w-3.5" />, color: 'text-orange-400' },
-  DELIVERY:  { label: 'ديليفري', icon: <Phone    className="h-3.5 w-3.5" />, color: 'text-purple-400' },
+const ORDER_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; bg: string }> = {
+  DINE_IN:   { label: 'صالة',    icon: <Utensils className="h-3 w-3" />, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
+  TAKEAWAY:  { label: 'تيكاوي', icon: <Package  className="h-3 w-3" />, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/30' },
+  DELIVERY:  { label: 'ديليفري', icon: <Phone    className="h-3 w-3" />, color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30' },
 }
 
 interface OrderCardProps {
@@ -26,230 +25,190 @@ interface OrderCardProps {
   onViewReceipt: (order: Order) => void
 }
 
+const statusActions: Record<string, { nextStatus: string; label: string; icon: React.ReactNode; className: string } | null> = {
+  PENDING:     { nextStatus: 'CONFIRMED',   label: 'تأكيد',   icon: <Check className="h-3.5 w-3.5" />,      className: 'bg-green-600 hover:bg-green-700 text-white' },
+  CONFIRMED:   { nextStatus: 'PREPARING',   label: 'تحضير',   icon: <Flame className="h-3.5 w-3.5" />,      className: 'bg-[#D4AF37] hover:bg-[#D4AF37]/90 text-black' },
+  PREPARING:   { nextStatus: 'READY',       label: 'جاهز',    icon: <CheckCircle className="h-3.5 w-3.5" />, className: 'bg-blue-600 hover:bg-blue-700 text-white' },
+  READY:       { nextStatus: 'DELIVERED',   label: 'تسليم',   icon: <BadgeCheck className="h-3.5 w-3.5" />,  className: 'bg-green-600 hover:bg-green-500 text-white' },
+  READY_TO_PAY:{ nextStatus: 'DELIVERED',   label: 'دفع',     icon: <BadgeCheck className="h-3.5 w-3.5" />,  className: 'bg-emerald-600 hover:bg-emerald-500 text-white' },
+  DELIVERED:   null,
+  CANCELLED:   null,
+}
+
 export function OrderCard({ order, relativeTime, isUpdating, onUpdateStatus, onCancel, onPrint, onViewReceipt }: OrderCardProps) {
   const statusInfo = ORDER_STATUS_MAP[order.status] ?? ORDER_STATUS_MAP.PENDING
-  const typeInfo   = ORDER_TYPE_MAP_WITH_ICONS[order.type] ?? ORDER_TYPE_MAP_WITH_ICONS.DINE_IN
-  const isReady    = order.status === 'READY' || order.status === 'READY_TO_PAY'
+  const typeConfig = ORDER_TYPE_CONFIG[order.type] ?? ORDER_TYPE_CONFIG.DINE_IN
+  const isFinal = order.status === 'CANCELLED'
+  const action = statusActions[order.status]
+
+  const hasKitchenItems = order.items.some(i => i.preparationArea === 'KITCHEN')
+  const hasBaristaItems = order.items.some(i => i.preparationArea === 'BARISTA')
+
+  const getPrepPill = (area: 'kitchen' | 'barista') => {
+    const status = area === 'kitchen' ? order.kitchenStatus : order.baristaStatus
+    const label = area === 'kitchen' ? 'مطبخ' : 'باريستا'
+    if (status === 'PENDING' || status === 'CONFIRMED') return null
+    return (
+      <span className={`inline-flex items-center gap-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded ${
+        status === 'READY' ? 'bg-green-500/15 text-green-400' :
+        status === 'CANCELLED' ? 'bg-red-500/15 text-red-400' :
+        'bg-amber-500/15 text-amber-400'
+      }`}>
+        <ChefHat className="h-2.5 w-2.5" />
+        {label}: {ORDER_STATUS_MAP[status]?.label || status}
+      </span>
+    )
+  }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 15 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, x: -30 }}
-      transition={{ duration: 0.3 }}
+      exit={{ opacity: 0, x: -20 }}
+      transition={{ duration: 0.25 }}
       layout
-      className="max-w-full overflow-hidden"
     >
-      <Card
-        className={`border overflow-hidden transition-all duration-200 ${
-          isReady
-            ? 'border-green-500/50 hover:border-green-400/70 bg-green-500/5'
-            : 'border-border/50 hover:border-[#D4AF37]/40 bg-card'
-        }`}
-        dir="rtl"
-      >
-        {/* Color stripe — same as cashier */}
-        <div className={`h-1 ${isReady ? 'bg-gradient-to-l from-green-500 to-green-400/40' : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'}`} />
+      <Card className={`border overflow-hidden transition-all duration-200 ${
+        isFinal ? 'border-border/30 opacity-70' :
+        order.status === 'READY' || order.status === 'READY_TO_PAY'
+          ? 'border-green-500/40 hover:border-green-500/60 bg-green-500/[0.03]'
+          : 'border-border/40 hover:border-[#D4AF37]/30 bg-card'
+      }`} dir="rtl">
+        <div className={`h-0.5 ${
+          isFinal ? 'bg-border/30' :
+          order.status === 'READY' || order.status === 'READY_TO_PAY'
+            ? 'bg-gradient-to-l from-green-500 to-green-400/40'
+            : 'bg-gradient-to-l from-[#D4AF37] to-[#D4AF37]/40'
+        }`} />
 
-        <CardContent className="p-4 space-y-3">
-
-          {/* ── Header ── */}
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-2">
-              {/* Order number badge */}
-              <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${isReady ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'}`}>
-                <span className={`text-sm font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+        <CardContent className="p-3 sm:p-4 space-y-2.5">
+          {/* Header: Order # + Status + Type + Time */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                isFinal ? 'bg-muted' :
+                order.status === 'READY' || order.status === 'READY_TO_PAY' ? 'bg-green-500/10' : 'bg-[#D4AF37]/10'
+              } shrink-0`}>
+                <span className={`text-sm font-bold ${isFinal ? 'text-muted-foreground' : order.status === 'READY' || order.status === 'READY_TO_PAY' ? 'text-green-400' : 'text-[#D4AF37]'}`}>
                   #{order.orderNumber}
                 </span>
               </div>
-
-              <div>
-                {/* Status + type */}
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusInfo.bg}`}>
-                    <span className={statusInfo.color}>{statusInfo.label}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Badge variant="outline" className={`h-5 px-2 text-[9px] font-bold border ${statusInfo.bg} ${statusInfo.color}`}>
+                    {statusInfo.label}
+                  </Badge>
+                  <span className={`inline-flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded ${typeConfig.bg} ${typeConfig.color}`}>
+                    {typeConfig.icon}{typeConfig.label}
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-medium ${typeInfo.color}`}>
-                    {typeInfo.icon}{typeInfo.label}
-                  </span>
+                  {order.type === 'DINE_IN' && order.tableNumber && (
+                    <span className="text-[9px] text-blue-400 font-medium">
+                      طاولة {order.tableNumber}
+                    </span>
+                  )}
                 </div>
-                {/* Time */}
-                <div className="flex items-center gap-1 mt-1">
-                  <Clock className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Clock className="h-2.5 w-2.5 text-muted-foreground/60" />
+                  <span className="text-[9px] text-muted-foreground/60">
                     {relativeTime || getRelativeTime(order.createdAt)}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Table badge */}
-            {order.type === 'DINE_IN' && order.tableNumber && (
-              <Badge variant="outline" className="border-blue-500/30 text-blue-400 text-[10px] gap-1">
-                <Utensils className="h-2.5 w-2.5" />طاولة {order.tableNumber}
-              </Badge>
-            )}
-          </div>
-
-          {/* ── Kitchen / Barista status pills ── */}
-          <div className="flex flex-wrap gap-2">
-            {order.items.some(i => i.preparationArea === 'KITCHEN') && (
-              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
-                order.kitchenStatus === 'READY'     ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                order.kitchenStatus === 'CANCELLED' ? 'bg-red-500/20   text-red-400   border-red-500/30'   :
-                order.kitchenStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
-                'bg-muted text-muted-foreground'
-              }`}>
-                🔥 مطبخ: {ORDER_STATUS_MAP[order.kitchenStatus]?.label || order.kitchenStatus}
-              </Badge>
-            )}
-            {order.items.some(i => i.preparationArea === 'BARISTA') && (
-              <Badge variant="secondary" className={`text-[9px] px-1.5 py-0 ${
-                order.baristaStatus === 'READY'     ? 'bg-green-500/20 text-green-400 border-green-500/30' :
-                order.baristaStatus === 'CANCELLED' ? 'bg-red-500/20   text-red-400   border-red-500/30'   :
-                order.baristaStatus === 'PREPARING' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 animate-pulse' :
-                'bg-blue-500/20  text-blue-400  border-blue-500/30'
-              }`}>
-                ☕ باريستا: {ORDER_STATUS_MAP[order.baristaStatus]?.label || order.baristaStatus}
-              </Badge>
-            )}
-          </div>
-
-          {/* ── Customer info ── */}
-          <div className="flex flex-col gap-1 text-xs text-muted-foreground min-w-0">
-            <div className="flex items-center gap-3 flex-wrap min-w-0">
-              <span className="truncate max-w-full">{order.customerName}</span>
-              {order.customerPhone && (
-                <span className="flex items-center gap-1 flex-shrink-0" dir="ltr">
-                  <Phone className="h-3 w-3" />{order.customerPhone}
-                </span>
-              )}
-              {order.deliveryAddress && (
-                <span className="flex items-center gap-1 truncate min-w-0 max-w-full">
-                  <MapPin className="h-3 w-3 flex-shrink-0" />{order.deliveryAddress}
-                </span>
-              )}
+            {/* Prep pills */}
+            <div className="flex flex-col gap-0.5 items-end shrink-0">
+              {hasKitchenItems && getPrepPill('kitchen')}
+              {hasBaristaItems && getPrepPill('barista')}
             </div>
-            {order.status === 'CANCELLED' && order.cancelledBy && (
-              <div className="text-[10px] text-red-300">ملغي بواسطة: {order.cancelledBy}</div>
-            )}
           </div>
 
-          {/* ── Items list ── */}
-          <div className="space-y-1.5">
-            {order.items.slice(0, 3).map(item => (
-              <div key={item.id} className="flex items-center justify-between text-xs">
+          {/* Customer */}
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+            <span className="font-medium text-foreground/80">{order.customerName}</span>
+            {order.customerPhone && (
+              <span className="flex items-center gap-1" dir="ltr">
+                <Phone className="h-3 w-3 text-muted-foreground/50" />
+                {order.customerPhone}
+              </span>
+            )}
+            {order.deliveryAddress && (
+              <span className="flex items-center gap-1 truncate max-w-[200px]">
+                <MapPin className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                <span className="truncate">{order.deliveryAddress}</span>
+              </span>
+            )}
+            {order.status === 'CANCELLED' && order.cancelledBy && (
+              <span className="text-red-300 text-[10px]">— {order.cancelledBy}</span>
+            )}
+            {order.payments?.map((p, i) => (
+              <span key={i} className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-medium leading-none ${
+                p.method === 'CASH' ? 'border-green-500/30 text-green-400 bg-green-500/10' :
+                p.method === 'VISA' ? 'border-blue-500/30 text-blue-400 bg-blue-500/10' :
+                'border-purple-500/30 text-purple-400 bg-purple-500/10'
+              }`}>
+                {p.method === 'CASH' ? 'كاش' : p.method === 'VISA' ? 'فيزا' : 'فودافون كاش'}
+                : {p.amount.toFixed(0)} ج.م
+              </span>
+            ))}
+          </div>
+
+          {/* Items */}
+          <div className="space-y-1">
+            {order.items.slice(0, 4).map(item => (
+              <div key={item.id} className="flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-muted text-[10px] font-bold flex-shrink-0">
+                  <span className="flex h-4.5 w-4.5 items-center justify-center rounded bg-muted text-[9px] font-bold shrink-0">
                     {item.quantity}
                   </span>
-                  <span className="break-words leading-snug">{item.mealTitleAr || item.mealTitle}</span>
+                  <span className="truncate">{item.mealTitleAr || item.mealTitle}</span>
                 </div>
-                <span className="text-muted-foreground flex-shrink-0 mr-2">
+                <span className="text-muted-foreground shrink-0 mr-2">
                   {(item.price * item.quantity).toFixed(2)} ج.م
                 </span>
               </div>
             ))}
-            {order.items.length > 3 && (
+            {order.items.length > 4 && (
               <p className="text-[10px] text-muted-foreground text-center">
-                +{order.items.length - 3} أصناف أخرى
+                +{order.items.length - 4} أصناف أخرى
               </p>
             )}
             {order.notes && (
-              <p className="text-[10px] text-amber-400 border border-amber-500/20 rounded p-1">
-                ⚠️ {order.notes}
+              <p className="text-[10px] text-amber-400 bg-amber-500/5 border border-amber-500/15 rounded-lg px-2 py-1">
+                {order.notes}
               </p>
             )}
           </div>
 
-          <Separator className="bg-border/20" />
-
-          {/* ── Footer: total + admin action buttons ── */}
-          <div className="flex items-center justify-between flex-wrap gap-2 max-w-full">
+          {/* Footer: Total + Actions */}
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/20">
             <div>
-              <p className="text-[10px] text-muted-foreground">الإجمالي</p>
-              <p className={`text-lg font-bold ${isReady ? 'text-green-400' : 'text-[#D4AF37]'}`}>
+              <p className="text-[9px] text-muted-foreground">الإجمالي</p>
+              <p className={`text-base font-bold ${isFinal ? 'text-foreground/60' : order.status === 'READY' || order.status === 'READY_TO_PAY' ? 'text-green-400' : 'text-[#D4AF37]'}`}>
                 {order.total.toFixed(2)} ج.م
               </p>
             </div>
-
-            <div className="flex items-center gap-1 sm:gap-2 flex-wrap">
-              {/* View Receipt */}
-              <Button
-                size="sm" variant="outline"
-                onClick={() => onViewReceipt(order)}
-                className="gap-1 border-slate-500/30 text-slate-400 hover:bg-slate-500/10 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-              >
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => onViewReceipt(order)}
+                className="h-8 px-2.5 rounded-lg border border-slate-500/20 text-slate-400 hover:bg-slate-500/10 text-[10px] font-medium transition-all flex items-center gap-1">
                 <Eye className="h-3 w-3" /> فاتورة
-              </Button>
-
-              
-
-              {/* Status progression buttons */}
-              {order.status === 'PENDING' && (
-                <Button size="sm"
-                  onClick={() => onUpdateStatus(order.id, 'CONFIRMED')}
+              </button>
+              {action && (
+                <button onClick={() => onUpdateStatus(order.id, action.nextStatus)}
                   disabled={isUpdating}
-                  className="gap-1 bg-green-600 text-white hover:bg-green-700 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-                >
-                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                  تأكيد
-                </Button>
+                  className={`h-8 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 ${action.className}`}>
+                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : action.icon}
+                  {action.label}
+                </button>
               )}
-              {order.status === 'CONFIRMED' && (
-                <Button size="sm"
-                  onClick={() => onUpdateStatus(order.id, 'PREPARING')}
-                  disabled={isUpdating}
-                  className="gap-1 bg-[#D4AF37] text-black hover:bg-[#D4AF37]/90 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-                >
-                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Flame className="h-3 w-3" />}
-                  تحضير
-                </Button>
-              )}
-              {order.status === 'PREPARING' && (
-                <Button size="sm"
-                  onClick={() => onUpdateStatus(order.id, 'READY')}
-                  disabled={isUpdating}
-                  className="gap-1 bg-blue-600 text-white hover:bg-blue-700 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-                >
-                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-                  جاهز
-                </Button>
-              )}
-              {order.status === 'READY' && (
-                <Button size="sm"
-                  onClick={() => onUpdateStatus(order.id, 'DELIVERED')}
-                  disabled={isUpdating}
-                  className="gap-1 bg-green-600 text-white hover:bg-green-500 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-                >
-                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
-                  تسليم
-                </Button>
-              )}
-              {order.status === 'READY_TO_PAY' && (
-                <Button size="sm"
-                  onClick={() => onUpdateStatus(order.id, 'DELIVERED')}
-                  disabled={isUpdating}
-                  className="gap-1 bg-emerald-600 text-white hover:bg-emerald-500 h-7 sm:h-8 px-2 sm:px-3 text-[10px] sm:text-xs font-bold"
-                >
-                  {isUpdating ? <Loader2 className="h-3 w-3 animate-spin" /> : <BadgeCheck className="h-3 w-3" />}
-                  دفع
-                </Button>
-              )}
-
-              {/* Cancel (admin only — always visible unless already cancelled) */}
-              {order.status !== 'CANCELLED' && (
-                <Button size="sm" variant="outline"
-                  onClick={() => onCancel(order)}
-                  disabled={isUpdating}
-                  className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 h-7 sm:h-8 px-2 sm:px-3"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
+              {!isFinal && (
+                <button onClick={() => onCancel(order)} disabled={isUpdating}
+                  className="h-8 w-8 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-all flex items-center justify-center">
+                  <X className="h-3.5 w-3.5" />
+                </button>
               )}
             </div>
           </div>
-
         </CardContent>
       </Card>
     </motion.div>

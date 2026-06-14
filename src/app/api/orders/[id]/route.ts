@@ -4,6 +4,40 @@ import { releasePhoneOrder } from '@/lib/saraya/rate-limit'
 import { recalculateFromItems, validateDiscount, validateStatusTransition, validatePreparationStatus } from '@/lib/saraya/calculate-order'
 import { requireRole } from '@/lib/auth'
 
+type AddOnSnapshot = { id: string; title: string; titleAr: string; price: number }
+
+type ItemToAddInput = {
+  mealId?: unknown
+  mealTitle?: unknown
+  mealTitleAr?: unknown
+  price?: unknown
+  quantity?: unknown
+  addOns?: unknown
+  category?: unknown
+  preparationArea?: unknown
+  imageUrl?: unknown
+  notes?: unknown
+}
+
+type ItemToAddData = {
+  orderId: string
+  mealId: string
+  mealTitle: string
+  mealTitleAr: string
+  price: number
+  quantity: number
+  addOns: string
+  category: string
+  preparationArea: string
+  imageUrl: string
+  notes: string
+  addedQuantity: number
+}
+
+function toText(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback
+}
+
 // GET /api/orders/[id] - Get a single order with its items
 export async function GET(
   request: NextRequest,
@@ -48,14 +82,6 @@ export async function PUT(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Prevent cancelling already DELIVERED orders
-    if (body.status === 'CANCELLED' && existing.status === 'DELIVERED') {
-      return NextResponse.json(
-        { error: 'لا يمكن إلغاء طلب تم تسليمه بالفعل' },
-        { status: 400 }
-      )
-    }
-
     const updateData: Record<string, unknown> = {}
     if (body.status !== undefined) {
       // Validate status transition
@@ -64,15 +90,21 @@ export async function PUT(
         return NextResponse.json({ error: transitionCheck.error }, { status: 400 })
       }
       updateData.status = body.status
-      // Barista timer: starts when order becomes CONFIRMED and has barista items
-      if (body.status === 'CONFIRMED' && existing.status !== 'CONFIRMED') {
+      // Auto-set kitchen & barista access when status transitions to CONFIRMED or beyond
+      if (['CONFIRMED', 'PREPARING', 'READY'].includes(body.status) && existing.status !== body.status) {
         const orderItems = await db.orderItem.findMany({
           where: { orderId: id },
           select: { preparationArea: true },
         })
+        const hasKitchenItem = orderItems.some(i => i.preparationArea === 'KITCHEN')
         const hasBaristaItem = orderItems.some(i => i.preparationArea === 'BARISTA')
-        if (hasBaristaItem && !existing.baristaReceivedAt) {
-          updateData.baristaReceivedAt = new Date()
+        if (hasKitchenItem) {
+          updateData.kitchenAccess = true
+          if (!existing.kitchenAccess) updateData.kitchenReceivedAt = new Date()
+        }
+        if (hasBaristaItem) {
+          updateData.baristaAccess = true
+          if (!existing.baristaAccess) updateData.baristaReceivedAt = new Date()
         }
       }
     }
@@ -124,6 +156,7 @@ export async function PUT(
       })
     }
     if (body.cancelledBy !== undefined) updateData.cancelledBy = body.cancelledBy
+    if (body.cancelReason !== undefined) updateData.cancelReason = body.cancelReason
     // kitchenAccess: only set true if order actually has kitchen items (skip for HALL-only)
     if (body.kitchenAccess !== undefined) {
       if (body.kitchenAccess === true) {
@@ -169,7 +202,14 @@ export async function PUT(
       }
 
       // Fetch actual meal prices from DB for items being added
-      const addMealIds = Array.from(new Set(body.itemsToAdd.map((i: any) => i.mealId).filter(Boolean)))
+      const rawItemsToAdd = body.itemsToAdd as ItemToAddInput[]
+      const addMealIds = Array.from(
+        new Set(
+          rawItemsToAdd
+            .map((i) => i.mealId)
+            .filter((mealId): mealId is string => typeof mealId === 'string' && mealId.length > 0)
+        )
+      )
       const mealsForAdd = await db.meal.findMany({
         where: { id: { in: addMealIds }, isActive: true },
         select: {
@@ -181,16 +221,28 @@ export async function PUT(
           imageUrl: true,
           category: true,
           categoryAr: true,
-          addons: {
-            where: { isActive: true },
-            select: { id: true, title: true, titleAr: true, price: true },
-          },
         },
       })
       const mealMapForAdd = new Map(mealsForAdd.map(m => [m.id, m]))
+      const addOnsForMeals = await db.addOn.findMany({
+        where: { mealId: { in: addMealIds }, isActive: true },
+        select: { id: true, mealId: true, title: true, titleAr: true, price: true },
+      })
+      const addOnsByMealId = new Map<string, Map<string, AddOnSnapshot>>()
+      for (const addOn of addOnsForMeals) {
+        const mealAddOns = addOnsByMealId.get(addOn.mealId) ?? new Map<string, AddOnSnapshot>()
+        mealAddOns.set(addOn.id, {
+          id: addOn.id,
+          title: addOn.title,
+          titleAr: addOn.titleAr,
+          price: addOn.price,
+        })
+        addOnsByMealId.set(addOn.mealId, mealAddOns)
+      }
 
-      const itemsToAdd = body.itemsToAdd.map((item: any) => {
-        const meal = mealMapForAdd.get(item.mealId)
+      const itemsToAdd: ItemToAddData[] = rawItemsToAdd.map((item) => {
+        const mealId = toText(item.mealId)
+        const meal = mealMapForAdd.get(mealId)
         // Use DB price if available, otherwise fallback (should not happen due to earlier validation)
         const basePrice = meal ? meal.price : (parseFloat(String(item.price)) || 0)
 
@@ -201,27 +253,28 @@ export async function PUT(
           if (Array.isArray(raw)) addOnArray = raw
         } catch { /* empty */ }
 
-        const dbAddOnMap = meal ? new Map(meal.addons.map(a => [a.id, a])) : new Map()
+        const dbAddOnMap = addOnsByMealId.get(mealId) ?? new Map<string, AddOnSnapshot>()
         const validatedAddOns = addOnArray
-          .filter(a => a.id && dbAddOnMap.has(a.id))
+          .filter((a): a is { id: string } => typeof a.id === 'string' && dbAddOnMap.has(a.id))
           .map(a => {
             const dbAddOn = dbAddOnMap.get(a.id)!
             return { id: dbAddOn.id, title: dbAddOn.title, titleAr: dbAddOn.titleAr, price: dbAddOn.price }
           })
+        const quantity = parseInt(String(item.quantity), 10) || 1
 
         return {
           orderId: id,
-          mealId: item.mealId,
-          mealTitle: meal ? meal.title : (item.mealTitle || ''),
-          mealTitleAr: meal ? meal.titleAr : (item.mealTitleAr || ''),
+          mealId,
+          mealTitle: meal ? meal.title : toText(item.mealTitle),
+          mealTitleAr: meal ? meal.titleAr : toText(item.mealTitleAr),
           price: basePrice,
-          quantity: parseInt(String(item.quantity)) || 1,
+          quantity,
           addOns: JSON.stringify(validatedAddOns),
-          category: meal ? (meal.categoryAr || meal.category) : (item.category || ''),
-          preparationArea: meal ? meal.preparationArea : (item.preparationArea || 'KITCHEN'),
-          imageUrl: meal ? meal.imageUrl : (item.imageUrl || ''),
-          notes: item.notes || '',
-          addedQuantity: item.quantity,
+          category: meal ? (meal.categoryAr || meal.category) : toText(item.category),
+          preparationArea: meal ? meal.preparationArea : toText(item.preparationArea, 'KITCHEN'),
+          imageUrl: meal ? meal.imageUrl : toText(item.imageUrl),
+          notes: toText(item.notes),
+          addedQuantity: quantity,
         }
       })
 
@@ -397,6 +450,10 @@ export async function PUT(
           console.error('Failed to regenerate table code:', e)
         }
       }
+      // Save payments when order is delivered
+      if (body.status === 'DELIVERED' && Array.isArray(body.payments)) {
+        updateData.payments = body.payments
+      }
     }
 
     // Atomic delivery: update order and award points in a single transaction
@@ -480,6 +537,7 @@ export async function DELETE(
       data: {
         status: 'CANCELLED',
         cancelledBy: (payload?.cancelledBy as string) || 'admin',
+        cancelReason: (payload?.cancelReason as string) || '',
       },
       include: { items: true },
     })

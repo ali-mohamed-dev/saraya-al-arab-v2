@@ -1,6 +1,8 @@
 import { test } from '@playwright/test'
 
-const TABS = ['المنيو', 'الطلبات', 'الشيفت', 'الطاولات', 'العمال', 'المستخدمين', 'الموظفين', 'التقارير', 'الإعدادات']
+test.setTimeout(120000)
+
+const TABS = ['المنيو', 'الطلبات', 'الشيفت', 'الطاولات', 'العمال', 'المستخدمين', 'الموظفين', 'الحضور', 'التقارير', 'الإعدادات']
 
 test('scan all admin tabs for UI/console issues', async ({ page }) => {
   // Collect console errors
@@ -25,9 +27,10 @@ test('scan all admin tabs for UI/console issues', async ({ page }) => {
   for (const tab of TABS) {
     console.log(`\n=== TAB: ${tab} ===`)
 
-    // Click tab
-    await page.getByRole('button', { name: new RegExp(tab, 'i') }).click()
-    await page.waitForTimeout(2000)
+    // Click tab in the desktop tab bar
+    await page.getByRole('button', { name: new RegExp(tab, 'i') }).first().click()
+    // Wait for content to render (tabs like shift/reports need ~3s for API calls)
+    await page.waitForTimeout(3500)
 
     // Check URL
     console.log(`URL: ${page.url()}`)

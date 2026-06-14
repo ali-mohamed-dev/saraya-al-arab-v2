@@ -37,6 +37,8 @@ export async function GET(
         notes: shift.notes ?? undefined,
       },
       orders: [],
+      cancelledOrders: [],
+      discountedOrders: [],
       expenses: expenses.map((e) => ({
         title: e.description ?? '',
         amount: e.amount ?? 0,
@@ -47,6 +49,10 @@ export async function GET(
       totalRevenue,
       totalExpenses,
       netRevenue,
+      totalDiscounts: shift.totalDiscounts ?? 0,
+      cashRevenue: shift.cashRevenue ?? 0,
+      visaRevenue: shift.visaRevenue ?? 0,
+      vodafoneCashRevenue: shift.vodafoneCashRevenue ?? 0,
     })
 
     return new NextResponse(new Uint8Array(xlsxBuffer), {

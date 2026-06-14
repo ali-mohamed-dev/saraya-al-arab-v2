@@ -15,6 +15,7 @@ const PUBLIC_GET_PATHS = [
   '/api/meals',
   '/api/promotions',
   '/api/tables',
+  '/api/categories',
 ]
 
 const PUBLIC_POST_PATHS = [

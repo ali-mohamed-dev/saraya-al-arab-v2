@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
-import { checkIpRateLimit, checkPhoneRateLimit, checkMinOrderValue, getMinOrderValue } from '@/lib/saraya/rate-limit'
+import { checkPhoneRateLimit, checkMinOrderValue, getMinOrderValue } from '@/lib/saraya/rate-limit'
 import { calculateOrderTotals, validateDiscount } from '@/lib/saraya/calculate-order'
 import { SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
 import { requireRole, getStaffRole } from '@/lib/auth'
@@ -181,24 +181,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 2) IP Rate Limiting (skip for staff creating orders via POS)
-    if (!isStaff) {
-      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-        || request.headers.get('x-real-ip')
-        || 'unknown'
-      const ipCheck = checkIpRateLimit(clientIp)
-      if (!ipCheck.allowed) {
-        const retryMin = Math.ceil((ipCheck.retryAfterMs || 0) / 60000)
-        return NextResponse.json(
-          { error: `تم تجاوز الحد المسموح من الطلبات. حاول مرة أخرى بعد ${retryMin} دقيقة` },
-          { status: 429 }
-        )
-      }
-    }
+    // 2) Phone Rate Limiting moved below validations to avoid consuming slot on invalid requests
 
-    // 3) Phone Rate Limiting moved below validations to avoid consuming slot on invalid requests
-
-    // 4) DINE_IN: Validate table code (required for customer QR, optional for staff)
+    // 3) DINE_IN: Validate table code (required for customer QR, optional for staff)
     if (type === 'DINE_IN' && tableNumber) {
       if (tableCode) {
         const table = await db.restaurantTable.findFirst({
@@ -222,7 +207,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5) TAKEAWAY: Require phone
+    // 4) TAKEAWAY: Require phone
     if (type === 'TAKEAWAY' && !customerPhone) {
       return NextResponse.json(
         { error: 'رقم الهاتف مطلوب لطلبات التيك أواي' },
@@ -253,7 +238,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6) DELIVERY: Require phone + address
+    // 5) DELIVERY: Require phone + address
     if (type === 'DELIVERY') {
       if (!customerPhone) {
         return NextResponse.json(

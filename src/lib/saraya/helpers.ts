@@ -1,4 +1,4 @@
-import type { Order } from './types'
+import type { Order, Payment } from './types'
 
 // ── Time helpers ──────────────────────────────────────────────────────────
 
@@ -71,6 +71,10 @@ export function transformOrder(raw: Record<string, unknown>): Order {
     baristaReceivedAt: (raw.baristaReceivedAt as string) || undefined,
     notes: (raw.notes as string) || undefined,
     cancelledBy: (raw.cancelledBy as string) || undefined,
+    cancelReason: (raw.cancelReason as string) || undefined,
+    payments: Array.isArray(raw.payments)
+      ? (raw.payments as Payment[])
+      : undefined,
     shiftId: (raw.shiftId as string) || undefined,
     createdAt: (raw.createdAt as string) || new Date().toISOString(),
     updatedAt: (raw.updatedAt as string) || new Date().toISOString(),

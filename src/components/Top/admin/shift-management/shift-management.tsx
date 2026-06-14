@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, Printer, Wallet, Clock, Receipt,
   Percent, CircleDollarSign, FileSpreadsheet, RefreshCw,
   PiggyBank, CheckCircle, XCircle, ListOrdered,
-  Pencil, Trash2, Plus
+  Pencil, Trash2, Plus, Banknote, CreditCard, Smartphone, Star
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,9 @@ import { useToast } from '@/hooks/use-toast'
 import type { Order, ShiftWithDetails, ExpenseItem } from '@/lib/saraya/types'
 import { transformOrder } from '@/lib/saraya/helpers'
 import { printSingleOrder } from '@/components/Top/cashier/components/receipt-dialog'
+import { OrderCard } from '@/components/Top/admin/orders-tab/order-card'
+import { CancelOrderDialog } from '@/components/Top/admin/orders-tab/cancel-order-dialog'
+import { ReceiptDialog } from '@/components/Top/cashier/components/receipt-dialog'
 
 interface ShiftManagementProps {
   adminUsername: string
@@ -59,6 +62,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   const [closeError, setCloseError] = useState<string | null>(null)
   const [discountedOrders, setDiscountedOrders] = useState<any[]>([])
   const [showDiscounts, setShowDiscounts] = useState(false)
+  const [showPoints, setShowPoints] = useState(false)
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [newExpenseTitle, setNewExpenseTitle] = useState('')
   const [newExpenseAmount, setNewExpenseAmount] = useState('')
@@ -72,6 +76,10 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
   const [elapsed, setElapsed] = useState('')
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
+
   const fetchData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     try {
@@ -82,7 +90,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         if (shift) {
           const [expRes, ordRes] = await Promise.all([
             fetch(`/api/expenses?shiftId=${shift.id}`),
-            fetch(`/api/orders?shiftId=${shift.id}&status=DELIVERED`),
+            fetch(`/api/orders?shiftId=${shift.id}`),
           ])
           if (expRes.ok) setShiftExpenses(await expRes.json())
           if (ordRes.ok) {
@@ -141,7 +149,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
       const diff = Date.now() - new Date(currentShift.startedAt).getTime()
       const h = Math.floor(diff / 3600000)
       const m = Math.floor((diff % 3600000) / 60000)
-      setElapsed(h > 0 ? `${h}s ${m}m` : `${m}m`)
+      setElapsed(h > 0 ? `${h}h ${m}m` : `${m}m`)
     }
     update()
     timerRef.current = setInterval(update, 30000)
@@ -266,13 +274,29 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
     }
   }
 
-  const totalRevenue = shiftOrders.reduce((s, o) => s + o.total, 0)
+  const deliveredOrders = shiftOrders.filter(o => o.status === 'DELIVERED')
+  const totalRevenue = deliveredOrders.reduce((s, o) => s + o.total, 0)
+  const cashRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments || payments.length === 0) return sum + o.total
+    return sum + payments.filter(p => p.method === 'CASH').reduce((s, p) => s + p.amount, 0)
+  }, 0)
+  const visaRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments) return sum
+    return sum + payments.filter(p => p.method === 'VISA').reduce((s, p) => s + p.amount, 0)
+  }, 0)
+  const vodafoneCashRevenue = deliveredOrders.reduce((sum, o) => {
+    const payments = o.payments
+    if (!payments) return sum
+    return sum + payments.filter(p => p.method === 'VODAFONE_CASH').reduce((s, p) => s + p.amount, 0)
+  }, 0)
   const totalShiftExpenses = shiftExpenses.reduce((s, e) => s + e.amount, 0)
   const totalDiscounts = discountedOrders.reduce((s, o: any) => s + o.discountAmount, 0)
   const totalPoints = discountedOrders.filter((o: any) => o.discountType === 'POINTS').reduce((s: number, o: any) => s + o.discountAmount, 0)
   const netShift = totalRevenue - totalShiftExpenses
 
-  const orderCount = shiftOrders.length
+  const orderCount = deliveredOrders.length
 
   const printDiscountedOrder = async (orderNumber: number) => {
     if (!currentShift) return
@@ -284,6 +308,37 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
       }
     } catch (error) { console.error('print order error:', error) }
   }
+
+  const updateOrderStatus = async (orderId: string, newStatus: string, cancelReason?: string) => {
+    setUpdatingOrderId(orderId)
+    try {
+      const payload: Record<string, unknown> = { status: newStatus }
+      if (newStatus === 'CANCELLED') {
+        payload.cancelledBy = adminUsername
+        payload.cancelReason = cancelReason || ''
+      }
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        toast({ title: 'تم تحديث حالة الطلب' })
+        fetchData(false)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: 'خطأ', description: (data as { error?: string }).error || 'فشل في تحديث الحالة', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: 'خطأ', description: 'فشل في الاتصال بالخادم', variant: 'destructive' })
+    } finally {
+      setUpdatingOrderId(null)
+    }
+  }
+
+  const pointsOrders = discountedOrders.filter((o: any) => o.discountType === 'POINTS')
+  const manualDiscounts = discountedOrders.filter((o: any) => o.discountType !== 'POINTS')
+  const visibleOrders = shiftOrders.filter(o => o.status !== 'CANCELLED')
 
   if (loading) {
     return (
@@ -312,14 +367,15 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
         </div>
         {currentShift && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <Button variant="outline" size="sm" onClick={() => fetchData(false)}
-              className="gap-1.5 border-border/40 h-8 text-xs">
-              <RefreshCw className="h-3.5 w-3.5" />تحديث
-            </Button>
             <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-[11px] px-2 py-1 flex items-center gap-1">
               <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
               مفتوح
             </Badge>
+            <Button onClick={() => setShowCloseConfirm(true)} size="sm"
+              className="gap-1.5 bg-gradient-to-l from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600 font-bold text-xs h-8">
+              <StopCircle className="h-3.5 w-3.5" />
+              إنهاء الشيفت
+            </Button>
           </div>
         )}
       </div>
@@ -327,22 +383,29 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
       {currentShift ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
           {/* ── Stats Grid ──────────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
             <StatCard
               icon={CircleDollarSign} label="إجمالي الإيرادات"
               value={`${fmt(totalRevenue)} ج.م`}
               color="text-emerald-400" bg="bg-gradient-to-br from-emerald-500/10 to-transparent"
               sub={`${orderCount} طلب`} />
             <StatCard
+              icon={Banknote} label="مدفوع كاش"
+              value={`${fmt(cashRevenue)} ج.م`}
+              color="text-emerald-400" bg="bg-gradient-to-br from-emerald-500/10 to-transparent" />
+            <StatCard
+              icon={CreditCard} label="مدفوع فيزا"
+              value={`${fmt(visaRevenue)} ج.م`}
+              color="text-blue-400" bg="bg-gradient-to-br from-blue-500/10 to-transparent" />
+            <StatCard
+              icon={Smartphone} label="فودافون كاش"
+              value={`${fmt(vodafoneCashRevenue)} ج.م`}
+              color="text-purple-400" bg="bg-gradient-to-br from-purple-500/10 to-transparent" />
+            <StatCard
               icon={TrendingDown} label="مصروفات الوردية"
               value={`${fmt(totalShiftExpenses)} ج.م`}
               color="text-red-400" bg="bg-gradient-to-br from-red-500/10 to-transparent"
               sub={`${shiftExpenses.length} بند`} />
-            <StatCard
-              icon={Percent} label="الخصومات"
-              value={`${fmt(totalDiscounts)} ج.م`}
-              color="text-orange-400" bg="bg-gradient-to-br from-orange-500/10 to-transparent"
-              sub={`نقاط: ${fmt(totalPoints)} ج.م`} />
             <StatCard
               icon={PiggyBank} label="صافي الوردية"
               value={`${fmt(netShift)} ج.م`}
@@ -353,17 +416,38 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
 
           {/* Progress bar: revenue vs expenses */}
           {totalRevenue > 0 && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>المصروفات {((totalShiftExpenses / totalRevenue) * 100).toFixed(0)}%</span>
-                <span>الإيرادات 100%</span>
+            <div className="space-y-3">
+              {/* Revenue vs Expenses bar */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>المصروفات {((totalShiftExpenses / totalRevenue) * 100).toFixed(0)}%</span>
+                  <span>الإيرادات 100%</span>
+                </div>
+                <div className="h-2 rounded-full bg-muted/50 overflow-hidden flex">
+                  <div className="h-full bg-emerald-400/60 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, ((totalRevenue - totalShiftExpenses) / totalRevenue) * 100)}%` }} />
+                  <div className="h-full bg-red-400/60 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (totalShiftExpenses / totalRevenue) * 100)}%` }} />
+                </div>
               </div>
-              <div className="h-2 rounded-full bg-muted/50 overflow-hidden flex">
-                <div className="h-full bg-emerald-400/60 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, ((totalRevenue - totalShiftExpenses) / totalRevenue) * 100)}%` }} />
-                <div className="h-full bg-red-400/60 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, (totalShiftExpenses / totalRevenue) * 100)}%` }} />
-              </div>
+              {/* Payment method breakdown bar */}
+              {totalRevenue > 0 && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>كاش {cashRevenue > 0 ? ((cashRevenue / totalRevenue) * 100).toFixed(0) : 0}%</span>
+                    <span>فيزا {visaRevenue > 0 ? ((visaRevenue / totalRevenue) * 100).toFixed(0) : 0}%</span>
+                    <span>فودافون كاش {vodafoneCashRevenue > 0 ? ((vodafoneCashRevenue / totalRevenue) * 100).toFixed(0) : 0}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden flex">
+                    <div className="h-full bg-emerald-400/60 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, (cashRevenue / totalRevenue) * 100)}%` }} />
+                    <div className="h-full bg-blue-400/60 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, (visaRevenue / totalRevenue) * 100)}%` }} />
+                    <div className="h-full bg-purple-400/60 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min(100, (vodafoneCashRevenue / totalRevenue) * 100)}%` }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -385,6 +469,25 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
               <ListOrdered className="h-3.5 w-3.5 text-orange-400" />{discountedOrders.length} خصم
             </span>
           </div>
+
+          {/* ── Order Status Summary Chips ─────────────────────────── */}
+          {shiftOrders.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'معلق', count: shiftOrders.filter(o => o.status === 'PENDING').length, color: 'text-yellow-400 border-yellow-500/20 bg-yellow-500/10' },
+                { label: 'مؤكد', count: shiftOrders.filter(o => o.status === 'CONFIRMED').length, color: 'text-blue-400 border-blue-500/20 bg-blue-500/10' },
+                { label: 'تحضير', count: shiftOrders.filter(o => o.status === 'PREPARING').length, color: 'text-orange-400 border-orange-500/20 bg-orange-500/10' },
+                { label: 'جاهز', count: shiftOrders.filter(o => o.status === 'READY' || o.status === 'READY_TO_PAY').length, color: 'text-green-400 border-green-500/20 bg-green-500/10' },
+                { label: 'مسلم', count: shiftOrders.filter(o => o.status === 'DELIVERED').length, color: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/10' },
+                { label: 'ملغي', count: shiftOrders.filter(o => o.status === 'CANCELLED').length, color: 'text-red-400 border-red-500/20 bg-red-500/10' },
+              ].filter(c => c.count > 0).map(c => (
+                <span key={c.label} className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium ${c.color}`}>
+                  {c.label}
+                  <span className="font-bold">{c.count}</span>
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* ── Shift Expenses List ──────────────────────────────── */}
           <Card className="border-red-400/20 overflow-hidden">
@@ -450,9 +553,8 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
               )}
             </AnimatePresence>
           </Card>
-
           {/* ── Discounted Orders ────────────────────────────────── */}
-          {discountedOrders.length > 0 && (
+          {manualDiscounts.length > 0 && (
             <Card className="border-orange-400/20 overflow-hidden">
               <button
                 onClick={() => setShowDiscounts(!showDiscounts)}
@@ -460,7 +562,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                 <div className="flex items-center gap-2">
                   <Percent className="h-4 w-4 text-orange-400" />
                   <span className="font-bold text-sm text-orange-400">الخصومات</span>
-                  <Badge variant="outline" className="text-[10px] border-orange-400/20 text-orange-400">{discountedOrders.length}</Badge>
+                  <Badge variant="outline" className="text-[10px] border-orange-400/20 text-orange-400">{manualDiscounts.length}</Badge>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-orange-400">{fmt(totalDiscounts)} ج.م</span>
@@ -471,7 +573,7 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                 {showDiscounts && (
                   <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
                     className="overflow-hidden divide-y divide-orange-400/5">
-                    {discountedOrders.map((d: any, i: number) => (
+                    {manualDiscounts.map((d: any, i: number) => (
                       <div key={i} className="flex items-center justify-between p-2.5 sm:p-3 hover:bg-orange-400/[0.02] transition-colors">
                         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                           <span className="font-bold text-orange-400 shrink-0 text-xs sm:text-sm">#{d.orderNumber}</span>
@@ -479,8 +581,8 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                             <p className="text-xs text-muted-foreground truncate">{d.customerName || 'زبون'}</p>
                             <p className="text-[10px] text-orange-400/60 truncate">{d.discountReason || '—'}</p>
                           </div>
-                          <Badge className={`text-[10px] ${d.discountType === 'POINTS' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' : 'bg-orange-500/10 text-orange-400 border-orange-500/20'}`}>
-                            {d.discountType === 'POINTS' ? 'نقاط' : 'يدوي'}
+                          <Badge className="text-[10px] bg-orange-500/10 text-orange-400 border-orange-500/20">
+                            يدوي
                           </Badge>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -492,20 +594,91 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
                         </div>
                       </div>
                     ))}
+                    {/* ── Points sub-section inside Discounts card ── */}
+                    
                   </motion.div>
                 )}
               </AnimatePresence>
             </Card>
           )}
+           {pointsOrders.length > 0 && (
+            <>
+              
+                <div className="border-purple-400/20 bg-gradient-to-l from-purple-500/5 to-transparent rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setShowPoints(!showPoints)}
+                    className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-l from-purple-500/5 to-transparent hover:bg-purple-500/10 transition-colors">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-4 w-4 text-purple-400" />
+                      <span className="font-bold text-sm text-purple-400">مدفوع بنقاط الولاء</span>
+                      <Badge variant="outline" className="text-[10px] border-purple-400/20 text-purple-400">{pointsOrders.length}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-purple-400">{fmt(totalPoints)} ج.م</span>
+                      {showPoints ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    </div>
+                  </button>
+                  <AnimatePresence>
+                    {showPoints && (
+                      <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                        className="overflow-hidden divide-y divide-purple-400/5">
+                        {pointsOrders.map((d: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-2.5 sm:p-3 hover:bg-purple-400/[0.02] transition-colors">
+                            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                              <span className="font-bold text-purple-400 shrink-0 text-xs sm:text-sm">#{d.orderNumber}</span>
+                              <div className="min-w-0">
+                                <p className="text-xs text-muted-foreground truncate">{d.customerName || 'زبون'}</p>
+                                <p className="text-[10px] text-purple-400/60 truncate">{d.discountReason || 'نقاط'}</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-purple-400 font-bold text-xs sm:text-sm">{d.discountAmount.toFixed(0)} ج.م</span>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                onClick={() => printDiscountedOrder(d.orderNumber)}>
+                                <Printer className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
+            )}
+         {/* ── Shift Orders ─────────────────────────────────────── */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-blue-400" />
+              <h2 className="text-lg font-bold">طلبات الوردية</h2>
+              <Badge variant="outline" className="text-[10px] border-blue-400/20 text-blue-400">{shiftOrders.length}</Badge>
+            </div>
 
-          {/* ── Close Shift Button ───────────────────────────────── */}
-          <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-            <Button onClick={() => setShowCloseConfirm(true)}
-              className="w-full gap-2 bg-gradient-to-l from-red-600 to-red-700 text-white hover:from-red-500 hover:to-red-600 font-bold shadow-lg shadow-red-500/20 py-6 text-base">
-              <StopCircle className="h-5 w-5" />
-              إنهاء الشيفت وتسليم الإيراد
-            </Button>
-          </motion.div>
+            {visibleOrders.length === 0 ? (
+              <div className="py-12 text-center">
+                <Receipt className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">لا توجد طلبات في هذه الوردية</p>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <AnimatePresence>
+                  {visibleOrders.map((order) => (
+                    <OrderCard
+                      key={order.id}
+                      order={order}
+                      relativeTime=""
+                      isUpdating={updatingOrderId === order.id}
+                      onUpdateStatus={updateOrderStatus}
+                      onCancel={setCancelTarget}
+                      onPrint={(o) => printSingleOrder(o)}
+                      onViewReceipt={setReceiptOrder}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
         </motion.div>
       ) : (
         /* ── Empty State ───────────────────────────────────────── */
@@ -702,6 +875,24 @@ export function ShiftManagement({ adminUsername }: ShiftManagementProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CancelOrderDialog
+        order={cancelTarget}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={(orderId, reason) => updateOrderStatus(orderId, 'CANCELLED', reason)}
+      />
+
+      <ReceiptDialog
+        receiptOrder={receiptOrder}
+        receiptTableOrders={null}
+        updatingOrderId={updatingOrderId}
+        payingTable={null}
+        username={adminUsername}
+        onMarkAsPaid={(orderId) => updateOrderStatus(orderId, 'DELIVERED')}
+        onMarkTableAsPaid={() => {}}
+        onCloseOrder={() => setReceiptOrder(null)}
+        onCloseTable={() => {}}
+      />
     </div>
   )
 }

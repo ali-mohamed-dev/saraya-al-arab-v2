@@ -6,7 +6,7 @@ import { Loader2, XCircle, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import type { Order, KitchenBaristaStatus } from '@/lib/saraya/types'
+import type { Order, OrderItem, KitchenBaristaStatus } from '@/lib/saraya/types'
 import { transformOrder, playNotificationSound, unlockAudio } from '@/lib/saraya/helpers'
 import { useRelativeTimers } from '@/lib/saraya/hooks'
 import { usePageVisibility } from '@/lib/saraya/use-page-visibility'
@@ -19,7 +19,7 @@ import { BaristaEmptyState } from './components/barista-empty-state'
 
 const REFRESH_INTERVAL_SECONDS = 5
 
-function isBaristaItem(item: any) {
+function isBaristaItem(item: OrderItem) {
   return item?.preparationArea === 'BARISTA' || item?.category === 'مشروبات'
 }
 
@@ -49,7 +49,8 @@ export function BaristaPanel({ onLogout }: { onLogout: () => void }) {
   const pageVisible = usePageVisibility()
 
   // React Query — auto polls every 5s, pauses when tab is hidden
-  const { data: ordersData, isLoading, isError, refetch } = useBaristaOrders(currentShiftId, shiftOpen === true)
+  const { data: rawOrdersData, isLoading, isError, refetch } = useBaristaOrders(currentShiftId, shiftOpen === true)
+  const ordersData: Order[] = rawOrdersData ?? []
   const orders = (ordersData || []).filter((o) =>
     (o.items?.some(isBaristaItem) ?? false) &&
     o.baristaStatus !== 'READY' &&

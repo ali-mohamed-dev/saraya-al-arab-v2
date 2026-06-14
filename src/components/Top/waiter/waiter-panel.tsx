@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, ClipboardList, Loader2, Armchair } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { SERVICE_CHARGE_RATE, DELIVERY_FEE } from '@/lib/saraya/constants'
 import { transformOrder, playNotificationSound, unlockAudio, isValidEgyptianPhone } from '@/lib/saraya/helpers'
@@ -100,25 +99,25 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   }, [])
 
   // ── React Query: orders fetched with auto-refetch every 5s ──────────
-  const { data: fetchedOrdersData, isLoading: ordersLoading } = useWaiterOrders(currentShiftId, shiftOpen === true)
+  const { data: rawFetchedOrdersData, isLoading: ordersLoading } = useWaiterOrders(currentShiftId, shiftOpen === true)
 
   const allOrders = useMemo(() =>
-    (fetchedOrdersData || [])
-      .filter(o => o.status !== 'DELIVERED' && o.status !== 'CANCELLED' && o.status !== 'READY_TO_PAY' && o.type === 'DINE_IN')
+    (rawFetchedOrdersData || [])
+      .filter((o: Order) => o.status !== 'DELIVERED' && o.status !== 'CANCELLED' && o.status !== 'READY_TO_PAY' && o.type === 'DINE_IN')
       .sort((a: Order, b: Order) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [fetchedOrdersData]
+    [rawFetchedOrdersData]
   )
 
   // Notification logic: watch for changes in order data
   useEffect(() => {
-    if (!fetchedOrdersData || shiftOpen !== true) return
+    if (!rawFetchedOrdersData || shiftOpen !== true) return
 
     const previous = prevStatusesRef.current
-    const newDineInPending = allOrders.filter((o) =>
+    const newDineInPending = allOrders.filter((o: Order) =>
       o.status === 'PENDING' && o.type === 'DINE_IN' && !previous[o.id]
     )
 
-    allOrders.forEach((o) => {
+    allOrders.forEach((o: Order) => {
       const prev = previous[o.id]
       if (!prev) return
 
@@ -154,15 +153,15 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
       playNotificationSound()
       const desc = newDineInPending.length === 1
         ? `طلب رقم #${newDineInPending[0].orderNumber} وصل للويتر`
-        : `${newDineInPending.length} طلبات جديدة (${newDineInPending.map(o => `#${o.orderNumber}`).join(', ')})`
+        : `${newDineInPending.length} طلبات جديدة (${newDineInPending.map((o: Order) => `#${o.orderNumber}`).join(', ')})`
       toast({ title: 'طلبات صالة جديدة', description: desc })
     }
 
-    prevStatusesRef.current = Object.fromEntries(allOrders.map((o) => [
+    prevStatusesRef.current = Object.fromEntries(allOrders.map((o: Order) => [
       o.id,
       { status: o.status, kitchen: o.kitchenStatus, barista: o.baristaStatus, kitchenAccess: o.kitchenAccess, baristaAccess: o.baristaAccess }
     ]))
-  }, [fetchedOrdersData, allOrders, shiftOpen, toast])
+  }, [rawFetchedOrdersData, allOrders, shiftOpen, toast])
 
   // Update local orders whenever data changes
   useEffect(() => {
@@ -217,22 +216,26 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
   }, [orderType, tableNumber, orders])
 
   // ── Update order status ────────────────────────────────────────────────
-  const updateOrderStatus = useCallback(async (orderId: string, newStatus: string) => {
+  const updateOrderStatus = useCallback(async (orderId: string, newStatus: string, cancelReason?: string) => {
     setUpdatingOrderId(orderId)
     try {
+      const payload: Record<string, unknown> = {
+        status: newStatus,
+      }
+      if (newStatus === 'CANCELLED') {
+        payload.kitchenStatus = 'CANCELLED'
+        payload.baristaStatus = 'CANCELLED'
+        payload.cancelReason = cancelReason || ''
+      }
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: newStatus,
-          kitchenAccess: ['CONFIRMED', 'PREPARING', 'READY'].includes(newStatus),
-          baristaAccess: ['CONFIRMED', 'PREPARING', 'READY'].includes(newStatus),
-        }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
         
-        if (newStatus === 'READY_TO_PAY') {
+        if (newStatus === 'READY_TO_PAY' || newStatus === 'CANCELLED') {
           setOrders(prev => prev.filter(o => o.id !== orderId))
         }
         
@@ -601,27 +604,28 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
         preparingCount={preparingCount}
         readyCount={readyCount}
         onLogout={onLogout}
+        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['waiter-orders'] })}
       />
 
       {/* Tab Switcher */}
       <div className="mx-auto max-w-7xl px-4 md:px-6 pt-4">
-        <div className="flex gap-1 rounded-xl bg-muted/50 p-1">
+        <div className="flex gap-1 rounded-xl bg-muted/30 p-1">
           <button
             onClick={() => { setActiveTab('orders'); const p = new URLSearchParams(window.location.search); p.set('tab', 'orders'); window.history.replaceState(null, '', `?${p.toString()}`) }}
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium transition-all ${
               activeTab === 'orders'
                 ? 'bg-[#D4AF37] text-black shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
             }`}
           >
             <ClipboardList className="h-4 w-4 shrink-0" />
             <span className="truncate">الطلبات</span>
             {orders.length > 0 && (
-              <Badge className={`h-5 min-w-[20px] text-[10px] px-1.5 ${
-                activeTab === 'orders' ? 'bg-black/20 text-black' : 'bg-[#D4AF37]/20 text-[#D4AF37]'
+              <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full text-[10px] font-bold px-1.5 ${
+                activeTab === 'orders' ? 'bg-black/15 text-black' : 'bg-[#D4AF37]/15 text-[#D4AF37]'
               }`}>
                 {orders.length}
-              </Badge>
+              </span>
             )}
           </button>
           <button
@@ -629,7 +633,7 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs sm:text-sm font-medium transition-all ${
               activeTab === 'tables'
                 ? 'bg-[#D4AF37] text-black shadow-sm'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
             }`}
           >
             <Armchair className="h-4 w-4 shrink-0" />
@@ -644,15 +648,16 @@ export function WaiterPanel({ onLogout }: { onLogout: () => void }) {
           pendingCount={pendingCount}
           confirmedCount={confirmedCount}
           preparingCount={preparingCount}
+          readyCount={readyCount}
         />
 
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-[#D4AF37] flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
             الطلبات النشطة
-            <Badge variant="outline" className="border-[#D4AF37]/30 text-[#D4AF37] text-xs">
+            <span className="flex h-5 items-center rounded-md border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-1.5 text-[10px] font-bold text-[#D4AF37]">
               {orders.length}
-            </Badge>
+            </span>
           </h2>
         </div>
 

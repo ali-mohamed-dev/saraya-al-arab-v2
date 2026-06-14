@@ -49,7 +49,7 @@ export function MealCard({ meal, priority }: MealCardProps) {
           <div className="pointer-events-none absolute inset-0 border-2 border-transparent transition-colors duration-300 group-hover:border-yellow-600/30" />
         </div>
         <CardContent className="space-y-3 p-4">
-          <h3 className="text-lg font-bold leading-tight text-foreground text-right" dir="rtl">{meal.titleAr}</h3>
+          <h3 className="text-lg font-bold leading-tight text-foreground text-right" dir="rtl">{meal.titleAr || meal.title}</h3>
           <p className="text-sm text-muted-foreground">{meal.title}</p>
           {meal.descriptionAr && (
             <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground/80 text-right" dir="rtl">{meal.descriptionAr}</p>
@@ -74,4 +74,3 @@ export function MealCard({ meal, priority }: MealCardProps) {
     </motion.div>
   )
 }
-

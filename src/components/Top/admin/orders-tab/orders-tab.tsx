@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ClipboardList, RefreshCw, Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ClipboardList, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useRelativeTimers } from '@/lib/saraya/hooks'
 import { transformOrder, escapeHtml } from '@/lib/saraya/helpers'
@@ -11,7 +10,6 @@ import { ORDER_STATUS_MAP } from '@/lib/saraya/constants'
 import { OrderStatsGrid } from './order-stats-grid'
 import { OrderCard } from './order-card'
 import { OrderFilters } from './order-filters'
-import { CancelledOrders } from './cancelled-orders'
 import { CancelOrderDialog } from './cancel-order-dialog'
 import { ReceiptDialog } from '@/components/Top/cashier/components/receipt-dialog'
 import type { Order, OrderStats, KitchenBaristaStatus } from '@/lib/saraya/types'
@@ -30,6 +28,7 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [orderStatusFilter, setOrderStatusFilter] = useState('ALL')
   const [orderTypeFilter, setOrderTypeFilter] = useState('ALL')
+  const [orderPaymentFilter, setOrderPaymentFilter] = useState('ALL')
   const [orderStats, setOrderStats] = useState<OrderStats | null>(null)
   const [shiftIds, setShiftIds] = useState<string[]>([])
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
@@ -37,7 +36,6 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0])
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0])
 
-  // ── Receipt dialog state ──
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null)
 
   const today = new Date().toISOString().split('T')[0]
@@ -87,13 +85,20 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       }))
       setOrders(
         allFetchedOrders
-          .filter((order) => order.status !== 'CANCELLED')
+          .filter((order) => orderStatusFilter === 'CANCELLED' || order.status !== 'CANCELLED')
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       )
     } catch (err) {
       console.error('Failed to fetch orders:', err)
     }
   }, [orderStatusFilter, orderTypeFilter, shiftIds])
+
+  const filteredOrders = orders.filter(order => {
+    if (orderPaymentFilter === 'ALL') return true
+    const payments = order.payments
+    if (!payments || payments.length === 0) return orderPaymentFilter === 'CASH'
+    return payments.some(p => p.method === orderPaymentFilter)
+  })
 
   const fetchCancelledOrders = useCallback(async () => {
     if (shiftIds.length === 0) { setCancelledOrders([]); return }
@@ -131,20 +136,18 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
           deliveredOrders:  (acc.deliveredOrders  || 0) + (curr.deliveredOrders  || 0),
           cancelledOrders:  (acc.cancelledOrders  || 0) + (curr.cancelledOrders  || 0),
           todayRevenue:     (acc.todayRevenue     || 0) + (curr.todayRevenue     || 0),
+          shiftRevenue:     (acc.shiftRevenue     || 0) + (curr.shiftRevenue     || 0),
+          cashRevenue:      (acc.cashRevenue      || 0) + (curr.cashRevenue      || 0),
+          visaRevenue:      (acc.visaRevenue      || 0) + (curr.visaRevenue      || 0),
+          vodafoneCashRevenue: (acc.vodafoneCashRevenue || 0) + (curr.vodafoneCashRevenue || 0),
           totalOrders:      (acc.totalOrders      || 0) + (curr.totalOrders      || 0),
           todayOrders:      (acc.todayOrders      || 0) + (curr.todayOrders      || 0),
         }
       }, {
-        pendingOrders: 0,
-        confirmedOrders: 0,
-        preparingOrders: 0,
-        readyOrders: 0,
-        readyToPayOrders: 0,
-        deliveredOrders: 0,
-        cancelledOrders: 0,
-        todayRevenue: 0,
-        totalOrders: 0,
-        todayOrders: 0,
+        pendingOrders: 0, confirmedOrders: 0, preparingOrders: 0, readyOrders: 0,
+        readyToPayOrders: 0, deliveredOrders: 0, cancelledOrders: 0,
+        todayRevenue: 0, shiftRevenue: 0, cashRevenue: 0, visaRevenue: 0, vodafoneCashRevenue: 0,
+        totalOrders: 0, todayOrders: 0,
       } as OrderStats)
       setOrderStats(aggregated)
     } catch (err) {
@@ -166,46 +169,38 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
 
   const printOrder = (order: Order) => {
     const content = `
-      <html>
-        <head>
-          <title>Order #${order.orderNumber}</title>
-          <style>body{font-family:sans-serif;direction:rtl;text-align:right;}table{width:100%;border-collapse:collapse;}td,th{padding:8px;border:1px solid #ddd;}h1,h2{margin:0 0 8px;}.muted{color:#666;font-size:0.9rem;}</style>
-        </head>
-        <body>
-          <h1>فاتورة الطلب #${order.orderNumber}</h1>
-          <p class="muted">الحالة: ${ORDER_STATUS_MAP[order.status]?.label ?? order.status}</p>
-          <p>الزبون: ${escapeHtml(order.customerName)}</p>
-          <p>الهاتف: ${escapeHtml(order.customerPhone || '-')} ${order.tableNumber ? ` | طاولة ${escapeHtml(order.tableNumber)}` : ''}</p>
-          ${order.deliveryAddress ? `<p>العنوان: ${escapeHtml(order.deliveryAddress)}</p>` : ''}
-          <table>
-            <thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead>
-            <tbody>
-              ${order.items.map(item => `
-                <tr>
-                  <td>${escapeHtml(item.mealTitleAr || item.mealTitle)}</td>
-                  <td>${item.quantity}</td>
-                  <td>${(item.price * item.quantity).toFixed(2)} ج.م</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <p class="muted">الإجمالي: ${order.total.toFixed(2)} ج.م</p>
-          ${order.notes ? `<p class="muted">ملاحظات: ${escapeHtml(order.notes)}</p>` : ''}
-          ${order.status === 'CANCELLED' && order.cancelledBy ? `<p class="muted">ملغي بواسطة: ${escapeHtml(order.cancelledBy)}</p>` : ''}
-          <script>window.print();</script>
-        </body>
-      </html>
+      <html><head><title>Order #${order.orderNumber}</title>
+      <style>body{font-family:sans-serif;direction:rtl;text-align:right;}
+      table{width:100%;border-collapse:collapse;}td,th{padding:8px;border:1px solid #ddd;}
+      h1,h2{margin:0 0 8px;}.muted{color:#666;font-size:0.9rem;}
+      @media print{@page{margin:1cm}body{font-size:12px}}</style></head>
+      <body>
+        <h1>فاتورة الطلب #${order.orderNumber}</h1>
+        <p class="muted">الحالة: ${ORDER_STATUS_MAP[order.status]?.label ?? order.status}</p>
+        <p>الزبون: ${escapeHtml(order.customerName)}</p>
+        <p>الهاتف: ${escapeHtml(order.customerPhone || '-')} ${order.tableNumber ? ` | طاولة ${escapeHtml(order.tableNumber)}` : ''}</p>
+        ${order.deliveryAddress ? `<p>العنوان: ${escapeHtml(order.deliveryAddress)}</p>` : ''}
+        <table><thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th></tr></thead>
+        <tbody>${order.items.map(item => `
+          <tr><td>${escapeHtml(item.mealTitleAr || item.mealTitle)}</td>
+          <td>${item.quantity}</td>
+          <td>${(item.price * item.quantity).toFixed(2)} ج.م</td></tr>
+        `).join('')}</tbody></table>
+        <p class="muted">الإجمالي: ${order.total.toFixed(2)} ج.م</p>
+        ${order.notes ? `<p class="muted">ملاحظات: ${escapeHtml(order.notes)}</p>` : ''}
+        ${order.status === 'CANCELLED' && order.cancelledBy ? `<p class="muted">ملغي بواسطة: ${escapeHtml(order.cancelledBy)}</p>` : ''}
+        <script>window.print();</script>
+      </body></html>
     `
     const printWindow = window.open('', '_blank', 'width=700,height=900')
     if (printWindow) { printWindow.document.write(content); printWindow.document.close() }
   }
 
-  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+  const updateOrderStatus = async (orderId: string, newStatus: string, cancelReason?: string) => {
     setUpdatingOrderId(orderId)
     try {
       const order = orders.find(o => o.id === orderId)
       const payload: Record<string, unknown> = { status: newStatus }
-
       if (newStatus === 'CONFIRMED') {
         payload.kitchenStatus = 'CONFIRMED' as KitchenBaristaStatus
         payload.baristaStatus = 'CONFIRMED' as KitchenBaristaStatus
@@ -223,10 +218,10 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       }
       if (newStatus === 'CANCELLED') {
         payload.cancelledBy = adminUsername
+        payload.cancelReason = cancelReason || ''
         payload.kitchenStatus = 'CANCELLED' as KitchenBaristaStatus
         payload.baristaStatus = 'CANCELLED' as KitchenBaristaStatus
       }
-
       const res = await fetch(`/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -235,7 +230,6 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
       if (res.ok) {
         toast({ title: 'تم تحديث حالة الطلب' })
         if (orderStatusFilter !== 'ALL') setOrderStatusFilter('ALL')
-        // لو الـ receipt dialog مفتوح على نفس الأوردر، أغلقه بعد التحديث
         if (receiptOrder?.id === orderId) setReceiptOrder(null)
         await fetchAllOrderData()
       } else {
@@ -250,10 +244,7 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   }
 
   const handleApplyDiscount = useCallback(async (orderId: string, discount: {
-    discountType: string
-    discountValue: number
-    discountReason: string
-    discountAppliedBy: string
+    discountType: string; discountValue: number; discountReason: string; discountAppliedBy: string
   }) => {
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
@@ -304,7 +295,6 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
 
         const pendingOrders = (await pendingRes.json()).map(transformOrder)
         const readyToPayOrders = (await readyRes.json()).map(transformOrder)
-
         const pendingChanged = pendingOrders.length > lastPendingCountRef.current
         const readyToPayChanged = readyToPayOrders.length !== lastReadyToPayCountRef.current
 
@@ -312,7 +302,6 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
           if (pendingChanged) toast({ title: 'طلب جديد! 🍽️', description: `طلب رقم #${pendingOrders[0].orderNumber}` })
           if (readyToPayChanged && readyToPayOrders.length > lastReadyToPayCountRef.current)
             toast({ title: 'طلب جاهز للدفع', description: `عدد الطلبات الجاهزة للدفع الآن ${readyToPayOrders.length}` })
-
           lastPendingCountRef.current = pendingOrders.length
           lastReadyToPayCountRef.current = readyToPayOrders.length
           fetchOrders()
@@ -325,45 +314,66 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
   }, [shiftIds, fromDate, toDate, today, fetchOrders, fetchStats, toast])
 
   return (
-    <div className="space-y-6">
-      <OrderStatsGrid stats={orderStats} currentShiftId={shiftIds.length > 0 ? shiftIds[0] : null} />
-
-      <div className="space-y-3">
-        <OrderFilters
-          statusFilter={orderStatusFilter}
-          typeFilter={orderTypeFilter}
-          fromDate={fromDate}
-          toDate={toDate}
-          onStatusFilterChange={setOrderStatusFilter}
-          onTypeFilterChange={setOrderTypeFilter}
-          onFromDateChange={setFromDate}
-          onToDateChange={setToDate}
-          onRefresh={fetchAllOrderData}
-        />
-        <div className="flex justify-end">
-          <Button
-            variant="outline" size="sm"
-            onClick={fetchAllOrderData}
-            className="gap-2 border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10 h-8"
-          >
-            <RefreshCw className="h-3 w-3" />تحديث يدوي
-          </Button>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-amber-500/20 to-amber-600/5 border border-amber-500/10 flex items-center justify-center">
+            <ClipboardList className="h-5 w-5 text-amber-400" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold">الطلبات</h1>
+            <p className="text-[11px] text-muted-foreground">
+              {orderStats?.totalOrders ?? 0} طلب · {orderStats?.todayOrders ?? 0} اليوم
+            </p>
+          </div>
         </div>
       </div>
 
-      {loadingOrders ? (
-        <div className="flex items-center justify-center py-12">
+      <OrderStatsGrid stats={orderStats} currentShiftId={shiftIds.length > 0 ? shiftIds[0] : null} />
+
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <OrderFilters
+            statusFilter={orderStatusFilter}
+            typeFilter={orderTypeFilter}
+            paymentFilter={orderPaymentFilter}
+            fromDate={fromDate}
+            toDate={toDate}
+            cancelledCount={cancelledOrders.length}
+            onStatusFilterChange={setOrderStatusFilter}
+            onTypeFilterChange={setOrderTypeFilter}
+            onPaymentFilterChange={setOrderPaymentFilter}
+            onFromDateChange={setFromDate}
+            onToDateChange={setToDate}
+            onRefresh={fetchAllOrderData}
+          />
+        </div>
+      </div>
+
+      {/* Orders Grid */}
+      {loadingOrders && filteredOrders.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-[#D4AF37]" />
         </div>
-      ) : orders.length === 0 ? (
-        <div className="py-12 text-center text-muted-foreground">
-          <ClipboardList className="mx-auto mb-3 h-12 w-12 opacity-30" />
-          <p>لا توجد طلبات حالياً</p>
+      ) : filteredOrders.length === 0 ? (
+        <div className="py-16 text-center">
+          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
+            <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
+              <ClipboardList className="h-10 w-10 text-muted-foreground/20" />
+            </div>
+            <p className="text-base font-bold text-muted-foreground mb-1">لا توجد طلبات</p>
+            <p className="text-sm text-muted-foreground/60">
+              {orderStatusFilter !== 'ALL' || orderTypeFilter !== 'ALL'
+                ? (orderStatusFilter === 'CANCELLED' ? 'لا توجد طلبات ملغية في هذه الفترة' : 'حاول تغيير فلتر البحث')
+                : 'لا توجد طلبات في هذه الفترة'}
+            </p>
+          </motion.div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <AnimatePresence>
-            {orders.map((order) => (
+            {filteredOrders.map((order) => (
               <OrderCard
                 key={order.id}
                 order={order}
@@ -379,20 +389,18 @@ export function OrdersTab({ adminUsername }: OrdersTabProps) {
         </div>
       )}
 
-      <CancelledOrders orders={cancelledOrders} />
-
       <CancelOrderDialog
         order={cancelTarget}
         onClose={() => setCancelTarget(null)}
-        onConfirm={(orderId) => updateOrderStatus(orderId, 'CANCELLED')}
+        onConfirm={(orderId, reason) => updateOrderStatus(orderId, 'CANCELLED', reason)}
       />
 
-      {/* ── Receipt Dialog (نفس بتاع الكاشير) ── */}
       <ReceiptDialog
         receiptOrder={receiptOrder}
         receiptTableOrders={null}
         updatingOrderId={updatingOrderId}
         payingTable={null}
+        username={adminUsername}
         onMarkAsPaid={(orderId) => updateOrderStatus(orderId, 'DELIVERED')}
         onMarkTableAsPaid={() => {}}
         onCloseOrder={() => setReceiptOrder(null)}

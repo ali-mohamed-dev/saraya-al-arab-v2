@@ -248,13 +248,12 @@ const VALID_KITCHEN_STATUSES = new Set(['PENDING', 'CONFIRMED', 'RECEIVED', 'PRE
  * Key = current status, Value = set of allowed next statuses.
  */
 const VALID_TRANSITIONS: Record<string, Set<string>> = {
-  PENDING: new Set(['CONFIRMED', 'CANCELLED']),
-  CONFIRMED: new Set(['PREPARING', 'CANCELLED']),
-  PREPARING: new Set(['READY', 'CANCELLED']),
+  PENDING: new Set(['CONFIRMED', 'CANCELLED', 'READY_TO_PAY']),
+  CONFIRMED: new Set(['PREPARING', 'CANCELLED', 'READY_TO_PAY']),
+  PREPARING: new Set(['READY', 'CANCELLED', 'READY_TO_PAY']),
   READY: new Set(['READY_TO_PAY', 'PREPARING', 'CANCELLED', 'DELIVERED']),
   READY_TO_PAY: new Set(['DELIVERED', 'CANCELLED']),
-  // DELIVERED and CANCELLED are terminal states
-  DELIVERED: new Set(),
+  DELIVERED: new Set(['CANCELLED']),
   CANCELLED: new Set(),
 }
 
@@ -301,7 +300,7 @@ export function validatePreparationStatus(
     RECEIVED: new Set(['PREPARING', 'READY', 'CANCELLED']),
     PREPARING: new Set(['READY', 'CANCELLED']),
     READY: new Set(['DELIVERED', 'CANCELLED']),
-    DELIVERED: new Set(),
+    DELIVERED: new Set(['CANCELLED']),
     CANCELLED: new Set(),
   }
 

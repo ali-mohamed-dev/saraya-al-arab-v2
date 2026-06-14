@@ -34,26 +34,24 @@ export function MenuGrid({ meals, loading, activeCategory, onViewDetail }: MenuG
 
   return (
     <>
-      {/* Active Category Label */}
       <AnimatePresence mode="wait">
         <motion.div
           key={activeCategory}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -10 }}
-          className="mb-6 text-center"
+          className="mb-4 flex items-center justify-between gap-3"
         >
-          <h2 className="text-2xl font-bold text-foreground">
-            {activeCategory === 'all' ? 'القائمة الكاملة' : activeCategory}
+          <h2 className="text-xl font-black text-foreground sm:text-2xl">
+            {activeCategory === 'all' ? 'القائمة' : activeCategory}
           </h2>
-          <Badge variant="outline" className="mt-2 border-[#D4AF37]/30 text-[#D4AF37]">
-            {meals.length} طبق
+          <Badge variant="outline" className="rounded-md border-[#D4AF37]/30 px-3 py-1 text-[#D4AF37]">
+            {meals.length} صنف
           </Badge>
         </motion.div>
       </AnimatePresence>
 
-      {/* Meals Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:gap-4 md:grid-cols-3 xl:grid-cols-3">
         <AnimatePresence>
           {meals.map((meal, index) => (
             <motion.div
@@ -62,7 +60,7 @@ export function MenuGrid({ meals, loading, activeCategory, onViewDetail }: MenuG
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
+              transition={{ duration: 0.25, delay: Math.min(index * 0.03, 0.18) }}
             >
               <MealCardSimple meal={meal} onViewDetail={onViewDetail} priority={index < 6} />
             </motion.div>
@@ -72,4 +70,3 @@ export function MenuGrid({ meals, loading, activeCategory, onViewDetail }: MenuG
     </>
   )
 }
-

@@ -21,6 +21,8 @@ interface ReceiptDialogProps {
   username: string
   onMarkAsPaid: (orderId: string) => void
   onMarkTableAsPaid: (orders: Order[]) => void
+  onRequestPayment?: (order: Order) => void
+  onRequestTablePayment?: (orders: Order[]) => void
   onCloseOrder: () => void
   onCloseTable: () => void
   onApplyDiscount?: (orderId: string, discount: {
@@ -105,6 +107,17 @@ export function printSingleOrder(order: Order) {
           ) : ''}
           <div class="total-row"><span>الإجمالي</span><span>${order.total.toFixed(2)} ج.م</span></div>
         </div>
+        ${order.payments && order.payments.length > 0 ? `
+        <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #ddd;font-size:12px;">
+          <div style="font-weight:bold;margin-bottom:4px;color:#888;">طرق الدفع</div>
+          ${order.payments.map(p => `
+            <div style="display:flex;justify-content:space-between;padding:1px 0;">
+              <span>${p.method === 'CASH' ? 'كاش' : p.method === 'VISA' ? 'فيزا' : 'فودافون كاش'}</span>
+              <span>${p.amount.toFixed(2)} ج.م</span>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
         ${order.notes ? `<div class="notes">ملاحظات: ${escapeHtml(order.notes)}</div>` : ''}
         <script>window.onafterprint=()=>window.close();window.print();</script>
       </body>
@@ -147,6 +160,12 @@ function printTableOrders(tableOrders: Order[]) {
     })
   ).join('')
 
+  const allPayments = tableOrders.filter(o => o.payments?.length).flatMap(o => o.payments!)
+  const paymentTotals: Record<string, number> = {}
+  for (const p of allPayments) {
+    paymentTotals[p.method] = (paymentTotals[p.method] || 0) + p.amount
+  }
+
   const content = `
     <html>
       <head>
@@ -179,6 +198,17 @@ function printTableOrders(tableOrders: Order[]) {
           ${totalOtherDiscount > 0 ? `<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:12px;color:#ef4444;"><span>إجمالي الخصومات</span><span>-${totalOtherDiscount.toFixed(2)} ج.م</span></div>` : ''}
           <div class="total-row"><span>الإجمالي</span><span>${total.toFixed(2)} ج.م</span></div>
         </div>
+        ${Object.keys(paymentTotals).length > 0 ? `
+        <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #ddd;font-size:12px;">
+          <div style="font-weight:bold;margin-bottom:4px;color:#888;">طرق الدفع</div>
+          ${Object.entries(paymentTotals).map(([method, amount]) => `
+            <div style="display:flex;justify-content:space-between;padding:1px 0;">
+              <span>${method === 'CASH' ? 'كاش' : method === 'VISA' ? 'فيزا' : 'فودافون كاش'}</span>
+              <span>${amount.toFixed(2)} ج.م</span>
+            </div>
+          `).join('')}
+        </div>
+        ` : ''}
         <script>window.onafterprint=()=>window.close();window.print();</script>
       </body>
     </html>
@@ -390,6 +420,8 @@ export function ReceiptDialog({
   username,
   onMarkAsPaid,
   onMarkTableAsPaid,
+  onRequestPayment,
+  onRequestTablePayment,
   onCloseOrder,
   onCloseTable,
   onApplyDiscount,
@@ -494,7 +526,7 @@ export function ReceiptDialog({
             <>
               {(receiptOrder.status === 'READY_TO_PAY' || (receiptOrder.status === 'READY' && receiptOrder.type !== 'DINE_IN')) && (
                 <Button
-                  onClick={() => onMarkAsPaid(receiptOrder.id)}
+                  onClick={() => onRequestPayment ? onRequestPayment(receiptOrder) : onMarkAsPaid(receiptOrder.id)}
                   disabled={updatingOrderId === receiptOrder.id}
                   className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold"
                 >
@@ -505,14 +537,14 @@ export function ReceiptDialog({
                 </Button>
               )}
               <div className="flex gap-2">
-                {onApplyDiscount && !showDiscountForm && (
+                {onApplyDiscount && !showDiscountForm && receiptOrder.status !== 'CANCELLED' && (
                   <Button variant="outline" onClick={() => setShowDiscountForm(true)}
                     className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10 flex-1">
                     <Percent className="h-4 w-4" />
                     {receiptOrder.discountAmount ? 'تعديل الخصم' : 'إضافة خصم'}
                   </Button>
                 )}
-                {onApplyDiscount && receiptOrder.discountAmount && !showDiscountForm && (
+                {onApplyDiscount && receiptOrder.discountAmount && !showDiscountForm && receiptOrder.status !== 'CANCELLED' && (
                   <Button variant="outline" onClick={handleRemoveDiscount} disabled={applyingDiscount}
                     className="gap-1 border-red-500/30 text-red-400 hover:bg-red-500/10">
                     <X className="h-4 w-4" />إلغاء الخصم
@@ -536,7 +568,7 @@ export function ReceiptDialog({
             <>
               {(receiptTableOrders.some(o => o.status === 'READY_TO_PAY') || receiptTableOrders.every(o => o.status === 'READY')) && (
                 <Button
-                  onClick={() => onMarkTableAsPaid(receiptTableOrders)}
+                  onClick={() => onRequestTablePayment ? onRequestTablePayment(receiptTableOrders) : onMarkTableAsPaid(receiptTableOrders)}
                   disabled={payingTable === receiptTableOrders[0]?.tableNumber}
                   className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-500 font-bold"
                 >
